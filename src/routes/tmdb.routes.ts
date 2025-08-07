@@ -1,6 +1,14 @@
 import { Router } from "express";
-import GetMovieById from "../controllers/tmdb.controller.js";
+import {
+  GetTrendingMovies,
+  RefreshTrendingMovies,
+  GetCacheStatus,
+} from "../controllers/tmdb.controller.js";
 
 const tmdbRouter = Router();
-tmdbRouter.route("/getMovie").post(GetMovieById);
+
+tmdbRouter.route("/trending/movies").get(GetTrendingMovies);
+tmdbRouter.route("/trending/refresh").post(RefreshTrendingMovies);
+tmdbRouter.route("/trending/status").get(GetCacheStatus);
+
 export default tmdbRouter;
