@@ -17,16 +17,104 @@ export class ScrapeTrending {
     await page.goto("https://www.imdb.com/list/ls082250769/", {
       waitUntil: "networkidle2",
     });
-    await this.scrape();
+    console.log("gelo");
+    return await this.scrape();
   }
   async scrape() {
-    console.log("hello");
-    const data = await this.page?.$$eval(
-      ".ipc-metadata-lipc-metadata-list-summary-itemist",
-      (response) => {
-        return response.map((option) => option.textContent);
+    const movieList = await this.page?.$$eval(
+      ".ipc-metadata-list-summary-item",
+      (elements) => {
+        return elements.map((element) => {
+          return {
+            // Title and ranking
+            title:
+              element.querySelector(".ipc-title__text")?.textContent?.trim() ||
+              "",
+
+            // Movie metadata
+            year:
+              element
+                .querySelector(".dli-title-metadata-item:first-child")
+                ?.textContent?.trim() || "",
+            runtime:
+              element
+                .querySelector(".dli-title-metadata-item:nth-child(2)")
+                ?.textContent?.trim() || "",
+            rating:
+              element
+                .querySelector(".dli-title-metadata-item:nth-child(3)")
+                ?.textContent?.trim() || "",
+
+            // Scores
+            imdbRating:
+              element
+                .querySelector(".ipc-rating-star--rating")
+                ?.textContent?.trim() || "",
+            imdbVotes:
+              element
+                .querySelector(".ipc-rating-star--voteCount")
+                ?.textContent?.trim()
+                .replace(/[()]/g, "") || "",
+            metascore:
+              element
+                .querySelector(".metacritic-score-box")
+                ?.textContent?.trim() || "",
+
+            // Plot description
+            plot:
+              element
+                .querySelector(
+                  ".title-description-plot-container .ipc-html-content-inner-div"
+                )
+                ?.textContent?.trim() || "",
+
+            // Director
+            director:
+              element
+                .querySelector(".title-description-credit a")
+                ?.textContent?.trim() || "",
+
+            // Stars (actors) - get all except first one (which is director)
+            stars: Array.from(
+              element.querySelectorAll(".title-description-credit a")
+            )
+              .slice(1)
+              //@ts-ignore
+              .map((star) => star.textContent?.trim())
+              .filter(Boolean),
+
+            // Poster image
+            posterUrl:
+              element.querySelector(".ipc-image")?.getAttribute("src") || "",
+            posterAlt:
+              element.querySelector(".ipc-image")?.getAttribute("alt") || "",
+
+            // Movie URL
+            movieUrl:
+              element
+                .querySelector(".ipc-title-link-wrapper")
+                ?.getAttribute("href") || "",
+
+            // Watchlist ID
+            watchlistId:
+              element
+                .querySelector('[data-testid^="inline-watched-button-"]')
+                ?.getAttribute("data-testid")
+                ?.replace("inline-watched-button-", "") || "",
+
+            // List position/ranking number
+            ranking:
+              element
+                .querySelector(".ipc-title__text")
+                ?.textContent?.match(/^\d+/)?.[0] || "",
+          };
+        });
       }
     );
-    console.log("hello3", data);
+
+    if (!Array.isArray(movieList)) {
+      return [];
+    }
+    return movieList;
   }
 }

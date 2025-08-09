@@ -13,19 +13,12 @@ import {
   UnfollowUser,
   GetUserFollowers,
   GetUserFollowing,
-  // Auth
-  CreateUserAccount,
-  LoginUser,
-  ResetPassword,
   GetUserProfile,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
 
-userRouter.route("/register").post(CreateUserAccount);
-userRouter.route("/login").post(LoginUser);
-userRouter.route("/reset-password").post(ResetPassword);
 userRouter.use(authenticateUser);
 userRouter.route("/preferences").post(SaveUserPreference);
 userRouter.route("/preferences").get(GetUserPreference);

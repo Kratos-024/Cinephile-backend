@@ -26,7 +26,7 @@ interface UserReview {
   tmdbId: number;
   title: string;
   review: string;
-  rating: number;
+  rating?: number;
   timestamp: string;
   updatedAt: any;
 }
@@ -52,6 +52,90 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
+// Profile Sync Controller (replaces auth functions)
+const SyncUserProfile = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { uid, email, displayName, photoURL } = req.body;
+      const authenticatedUid = req.user?.uid;
+
+      // Verify the requesting user matches the profile being synced
+      if (uid !== authenticatedUid) {
+        throw new ApiError(
+          403,
+          "Cannot sync profile for different user",
+          "FORBIDDEN"
+        );
+      }
+
+      // Check if user profile already exists
+      const existingProfile = await db
+        .collection("user_profiles")
+        .doc(uid)
+        .get();
+
+      if (existingProfile.exists) {
+        // Update existing profile
+        const updateData = {
+          email,
+          displayName: displayName || existingProfile.data()?.displayName,
+          photoURL: photoURL || existingProfile.data()?.photoURL,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        await db.collection("user_profiles").doc(uid).update(updateData);
+
+        res.status(200).json({
+          success: true,
+          message: "User profile updated successfully",
+          data: { uid, action: "updated" },
+        });
+      } else {
+        // Create new profile
+        const newProfile: UserProfile = {
+          uid,
+          email,
+          displayName: displayName || null,
+          photoURL: photoURL || null,
+          followers: [],
+          following: [],
+          followersCount: 0,
+          followingCount: 0,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        await db.collection("user_profiles").doc(uid).set(newProfile);
+
+        res.status(201).json({
+          success: true,
+          message: "User profile created successfully",
+          data: { uid, action: "created" },
+        });
+      }
+    } catch (error: any) {
+      console.error("Error syncing user profile:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while syncing profile",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+// User Preference Controllers (unchanged)
 const SaveUserPreference = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -247,7 +331,7 @@ const UpdateUserPreference = asyncHandler(
   }
 );
 
-// User Review Controllers
+// User Review Controllers (unchanged)
 const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -282,7 +366,7 @@ const SaveUserReview = asyncHandler(
         tmdbId: Number(tmdbId),
         title,
         review,
-        rating: rating || null,
+        rating: rating || undefined,
         timestamp: new Date().toISOString(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
@@ -436,7 +520,7 @@ const DeleteUserReview = asyncHandler(
   }
 );
 
-// User Social Controllers (Following/Followers)
+// User Social Controllers (unchanged)
 const FollowUser = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -717,185 +801,6 @@ const GetUserFollowing = asyncHandler(
   }
 );
 
-// User Auth Controllers
-const CreateUserAccount = asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { email, password, displayName } = req.body;
-
-    if (!email || !password) {
-      throw new ApiError(400, "Email and password are required", "BAD_REQUEST");
-    }
-
-    // Create user in Firebase Auth
-    const userRecord = await admin.auth().createUser({
-      email,
-      password,
-      displayName: displayName || undefined,
-    });
-
-    // Create user profile in Firestore
-    const userProfile: UserProfile = {
-      uid: userRecord.uid,
-      email: userRecord.email!,
-      displayName: userRecord.displayName || null,
-      photoURL: userRecord.photoURL || null,
-      followers: [],
-      following: [],
-      followersCount: 0,
-      followingCount: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    await db.collection("user_profiles").doc(userRecord.uid).set(userProfile);
-
-    // Create custom token for frontend authentication
-    const customToken = await admin.auth().createCustomToken(userRecord.uid);
-
-    res.status(201).json({
-      success: true,
-      message: "User account created successfully",
-      data: {
-        uid: userRecord.uid,
-        email: userRecord.email,
-        displayName: userRecord.displayName,
-        customToken,
-      },
-    });
-  } catch (error: any) {
-    console.error("Error creating user account:", error);
-
-    if (error.code === "auth/email-already-exists") {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: "Email already exists",
-        type: "EMAIL_EXISTS",
-      });
-    } else if (error instanceof ApiError) {
-      res.status(error.statusCode).json({
-        success: false,
-        status: error.statusCode,
-        message: error.message,
-        type: error.type,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        status: 500,
-        message: "Something went wrong while creating account",
-        type: "INTERNAL_ERROR",
-      });
-    }
-  }
-});
-
-const LoginUser = asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { idToken } = req.body;
-
-    if (!idToken) {
-      throw new ApiError(400, "ID token is required", "BAD_REQUEST");
-    }
-
-    // Verify the ID token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-
-    // Get user profile from Firestore
-    const userDoc = await db
-      .collection("user_profiles")
-      .doc(decodedToken.uid)
-      .get();
-
-    if (!userDoc.exists) {
-      throw new ApiError(404, "User profile not found", "NOT_FOUND");
-    }
-
-    const userProfile = userDoc.data();
-
-    res.status(200).json({
-      success: true,
-      message: "User logged in successfully",
-      data: {
-        uid: decodedToken.uid,
-        email: decodedToken.email,
-        displayName: userProfile?.displayName,
-        photoURL: userProfile?.photoURL,
-        followersCount: userProfile?.followersCount || 0,
-        followingCount: userProfile?.followingCount || 0,
-      },
-    });
-  } catch (error: any) {
-    console.error("Error logging in user:", error);
-
-    if (error.code === "auth/id-token-expired") {
-      res.status(401).json({
-        success: false,
-        status: 401,
-        message: "Token expired",
-        type: "TOKEN_EXPIRED",
-      });
-    } else if (error instanceof ApiError) {
-      res.status(error.statusCode).json({
-        success: false,
-        status: error.statusCode,
-        message: error.message,
-        type: error.type,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        status: 500,
-        message: "Something went wrong while logging in",
-        type: "INTERNAL_ERROR",
-      });
-    }
-  }
-});
-
-const ResetPassword = asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      throw new ApiError(400, "Email is required", "BAD_REQUEST");
-    }
-
-    // Generate password reset link
-    await admin.auth().generatePasswordResetLink(email);
-
-    res.status(200).json({
-      success: true,
-      message: "Password reset email sent successfully",
-    });
-  } catch (error: any) {
-    console.error("Error resetting password:", error);
-
-    if (error.code === "auth/user-not-found") {
-      res.status(404).json({
-        success: false,
-        status: 404,
-        message: "User not found",
-        type: "USER_NOT_FOUND",
-      });
-    } else if (error instanceof ApiError) {
-      res.status(error.statusCode).json({
-        success: false,
-        status: error.statusCode,
-        message: error.message,
-        type: error.type,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        status: 500,
-        message: "Something went wrong while resetting password",
-        type: "INTERNAL_ERROR",
-      });
-    }
-  }
-});
-
 const GetUserProfile = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -944,18 +849,25 @@ const GetUserProfile = asyncHandler(
 );
 
 export {
+  // Profile sync (replaces auth functions)
+  SyncUserProfile,
+
+  // Preferences
   SaveUserPreference,
   GetUserPreference,
   UpdateUserPreference,
+
+  // Reviews
   SaveUserReview,
   GetUserReviews,
   DeleteUserReview,
+
+  // Social
   FollowUser,
   UnfollowUser,
   GetUserFollowers,
   GetUserFollowing,
-  CreateUserAccount,
-  LoginUser,
-  ResetPassword,
+
+  // Profile
   GetUserProfile,
 };
