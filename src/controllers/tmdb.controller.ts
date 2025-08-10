@@ -176,7 +176,7 @@ const storeMovieDataInFirebase = async (
 
 const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
   try {
-    const imdbIdParam = req.params.imdbId;
+    const imdbIdParam = req.body.imdbId;
     if (!imdbIdParam) {
       throw new ApiError(400, "IMDb ID parameter is required");
     }
@@ -224,72 +224,5 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 });
-const TMDB_API_KEY = process.env.Tm_read; // store in .env
 
-// Step 1: Get TMDB ID from IMDb ID
-const getTMDBIdFromIMDb = async (imdbId: string) => {
-  const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-  const res = await fetch(url);
-  if (!res.ok) throw new ApiError(res.status, "Failed to fetch TMDB ID");
-
-  const data = await res.json();
-  if (!data.movie_results?.length) {
-    throw new ApiError(404, `Movie not found on TMDB for IMDb ID: ${imdbId}`);
-  }
-
-  return data.movie_results[0].id;
-};
-
-// Step 2: Get YouTube trailer from TMDB ID
-const getTrailerFromTMDB = async (tmdbId: number) => {
-  const url = `https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${TMDB_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new ApiError(res.status, "Failed to fetch trailers");
-
-  const data = await res.json();
-  const trailer = data.results?.find(
-    (v: any) => v.type === "Trailer" && v.site === "YouTube"
-  );
-
-  if (!trailer) throw new ApiError(404, "No YouTube trailer found");
-
-  return `https://www.youtube.com/watch?v=${trailer.key}`;
-};
-
-// Controller
-const GetMovieTrailer = asyncHandler(async (req: Request, res: Response) => {
-  const { imdbId } = req.body;
-
-  if (!imdbId) {
-    throw new ApiError(400, "IMDb ID is required in body");
-  }
-
-  try {
-    const tmdbId = await getTMDBIdFromIMDb(imdbId);
-    const youtubeUrl = await getTrailerFromTMDB(tmdbId);
-
-    res.status(200).json({
-      success: true,
-      imdb_id: imdbId,
-      tmdb_id: tmdbId,
-      trailer_url: youtubeUrl,
-    });
-  } catch (err) {
-    console.error("Error fetching trailer:", err);
-    if (err instanceof ApiError) {
-      res.status(err.statusCode).json({
-        success: false,
-        status: err.statusCode,
-        message: err.message,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        status: 500,
-        message: "Failed to fetch movie trailer",
-      });
-    }
-  }
-});
-
-export { GetMovieTrailer, GetTrendingMovies, GetMovieData };
+export { GetTrendingMovies, GetMovieData };
