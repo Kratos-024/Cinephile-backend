@@ -135,7 +135,6 @@ const SyncUserProfile = asyncHandler(
   }
 );
 
-// User Preference Controllers (unchanged)
 const SaveUserPreference = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -331,7 +330,6 @@ const UpdateUserPreference = asyncHandler(
   }
 );
 
-// User Review Controllers (unchanged)
 const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -520,7 +518,6 @@ const DeleteUserReview = asyncHandler(
   }
 );
 
-// User Social Controllers (unchanged)
 const FollowUser = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -848,26 +845,600 @@ const GetUserProfile = asyncHandler(
   }
 );
 
-export {
-  // Profile sync (replaces auth functions)
-  SyncUserProfile,
+interface LikedMovie {
+  tmdbId: number;
+  imdbId?: string;
+  title: string;
+  poster_path?: string;
+  release_date?: string;
+  vote_average?: number;
+  likedAt: string;
+}
 
-  // Preferences
+interface WatchlistMovie {
+  imdbId?: string;
+  title: string;
+  poster_path?: string;
+  release_date?: string;
+  vote_average?: string;
+  addedAt: string;
+}
+
+interface UserLikes {
+  userId: string;
+  likedMovies: LikedMovie[];
+  totalLikes: number;
+  updatedAt: any;
+}
+
+interface UserWatchlist {
+  userId: string;
+  watchlistMovies: WatchlistMovie[];
+  totalWatchlist: number;
+  updatedAt: any;
+}
+
+const LikeMovie = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { tmdbId, imdbId, title, poster_path, release_date, vote_average } =
+        req.body;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!tmdbId || !title) {
+        throw new ApiError(
+          400,
+          "Missing required parameters: tmdbId and title",
+          "BAD_REQUEST"
+        );
+      }
+
+      const docRef = db.collection("user_likes").doc(userId);
+      const doc = await docRef.get();
+
+      const likedMovie: LikedMovie = {
+        tmdbId: Number(tmdbId),
+        imdbId,
+        title,
+        poster_path,
+        release_date,
+        vote_average,
+        likedAt: new Date().toISOString(),
+      };
+
+      if (doc.exists) {
+        const userData = doc.data();
+        const currentLikes = userData?.likedMovies || [];
+
+        // Check if movie is already liked
+        const alreadyLiked = currentLikes.some(
+          (movie: LikedMovie) => movie.tmdbId === Number(tmdbId)
+        );
+
+        if (alreadyLiked) {
+          throw new ApiError(409, "Movie already liked");
+        }
+
+        const updatedLikes = [...currentLikes, likedMovie];
+
+        await docRef.update({
+          likedMovies: updatedLikes,
+          totalLikes: updatedLikes.length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new likes document
+        const newUserLikes: UserLikes = {
+          userId,
+          likedMovies: [likedMovie],
+          totalLikes: 1,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        await docRef.set(newUserLikes);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Movie liked successfully",
+        data: {
+          userId,
+          tmdbId: Number(tmdbId),
+          title,
+          likedAt: likedMovie.likedAt,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error liking movie:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while liking movie",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const UnlikeMovie = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { tmdbId } = req.body;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!tmdbId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter: tmdbId",
+          "BAD_REQUEST"
+        );
+      }
+
+      const docRef = db.collection("user_likes").doc(userId);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        throw new ApiError(404, "User likes not found", "NOT_FOUND");
+      }
+
+      const userData = doc.data();
+      const currentLikes = userData?.likedMovies || [];
+
+      // Remove the movie from likes
+      const updatedLikes = currentLikes.filter(
+        (movie: LikedMovie) => movie.tmdbId !== Number(tmdbId)
+      );
+
+      if (updatedLikes.length === currentLikes.length) {
+        throw new ApiError(404, "Movie not found in likes", "NOT_FOUND");
+      }
+
+      await docRef.update({
+        likedMovies: updatedLikes,
+        totalLikes: updatedLikes.length,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Movie unliked successfully",
+        data: {
+          userId,
+          tmdbId: Number(tmdbId),
+          removedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error unliking movie:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while unliking movie",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const GetUserLikedMovies = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.uid || req.params.userId;
+      const { limit = 10, offset = 0 } = req.query;
+
+      if (!userId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'userId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const doc = await db.collection("user_likes").doc(userId).get();
+
+      if (!doc.exists) {
+        return res.status(200).json({
+          success: true,
+          message: "No liked movies found for this user",
+          data: {
+            userId,
+            likedMovies: [],
+            totalLikes: 0,
+          },
+        });
+      }
+
+      const userData = doc.data();
+      const allLikes = userData?.likedMovies || [];
+
+      // Apply pagination
+      const startIndex = Number(offset);
+      const endIndex = startIndex + Number(limit);
+      const paginatedLikes = allLikes.slice(startIndex, endIndex);
+
+      res.status(200).json({
+        success: true,
+        message: "Liked movies retrieved successfully",
+        data: {
+          userId,
+          likedMovies: paginatedLikes,
+          totalLikes: allLikes.length,
+          currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
+          totalPages: Math.ceil(allLikes.length / Number(limit)),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error retrieving liked movies:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while retrieving liked movies",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const AddToWatchlist = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { imdbId, title, poster_path, release_date, vote_average } =
+        req.body;
+      const userId = req.user?.uid;
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!imdbId || !title) {
+        throw new ApiError(
+          400,
+          "Missing required parameters: tmdbId and title",
+          "BAD_REQUEST"
+        );
+      }
+
+      const docRef = db.collection("user_watchlist").doc(userId);
+      const doc = await docRef.get();
+
+      const watchlistMovie: WatchlistMovie = {
+        imdbId,
+        title,
+        poster_path,
+        release_date,
+        vote_average,
+        addedAt: new Date().toISOString(),
+      };
+
+      if (doc.exists) {
+        const userData = doc.data();
+        const currentWatchlist = userData?.watchlistMovies || [];
+
+        const alreadyInWatchlist = currentWatchlist.some(
+          (movie: WatchlistMovie) => movie.imdbId === imdbId
+        );
+
+        if (alreadyInWatchlist) {
+          throw new ApiError(409, "Movie already in watchlist");
+        }
+
+        const updatedWatchlist = [...currentWatchlist, watchlistMovie];
+
+        await docRef.update({
+          watchlistMovies: updatedWatchlist,
+          totalWatchlist: updatedWatchlist.length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        const newUserWatchlist: UserWatchlist = {
+          userId,
+          watchlistMovies: [watchlistMovie],
+          totalWatchlist: 1,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        await docRef.set(newUserWatchlist);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Movie added to watchlist successfully",
+        data: {
+          userId,
+          title,
+          addedAt: watchlistMovie.addedAt,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error adding to watchlist:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while adding to watchlist",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const RemoveFromWatchlist = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { imdbId } = req.body;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!imdbId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter: tmdbId",
+          "BAD_REQUEST"
+        );
+      }
+
+      const docRef = db.collection("user_watchlist").doc(userId);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        throw new ApiError(404, "User watchlist not found", "NOT_FOUND");
+      }
+
+      const userData = doc.data();
+      const currentWatchlist = userData?.watchlistMovies || [];
+
+      const updatedWatchlist = currentWatchlist.filter(
+        (movie: WatchlistMovie) => movie.imdbId !== imdbId
+      );
+
+      if (updatedWatchlist.length === currentWatchlist.length) {
+        throw new ApiError(404, "Movie not found in watchlist", "NOT_FOUND");
+      }
+
+      await docRef.update({
+        watchlistMovies: updatedWatchlist,
+        totalWatchlist: updatedWatchlist.length,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Movie removed from watchlist successfully",
+        data: {
+          userId,
+          imdbId: imdbId,
+          removedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error removing from watchlist:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while removing from watchlist",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const GetUserWatchlist = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.uid || req.params.userId;
+      const { limit = 10, offset = 0 } = req.query;
+
+      if (!userId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'userId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const doc = await db.collection("user_watchlist").doc(userId).get();
+
+      if (!doc.exists) {
+        return res.status(200).json({
+          success: true,
+          message: "No watchlist found for this user",
+          data: {
+            userId,
+            watchlistMovies: [],
+            totalWatchlist: 0,
+          },
+        });
+      }
+
+      const userData = doc.data();
+      const allWatchlist = userData?.watchlistMovies || [];
+
+      // Apply pagination
+      const startIndex = Number(offset);
+      const endIndex = startIndex + Number(limit);
+      const paginatedWatchlist = allWatchlist.slice(startIndex, endIndex);
+
+      res.status(200).json({
+        success: true,
+        message: "Watchlist retrieved successfully",
+        data: {
+          userId,
+          watchlistMovies: paginatedWatchlist,
+          totalWatchlist: allWatchlist.length,
+          currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
+          totalPages: Math.ceil(allWatchlist.length / Number(limit)),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error retrieving watchlist:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while retrieving watchlist",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const CheckMovieStatus = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { imdbId } = req.params;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!imdbId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter: tmdbId",
+          "BAD_REQUEST"
+        );
+      }
+
+      // Check if movie is liked
+      const likesDoc = await db.collection("user_likes").doc(userId).get();
+      let isLiked = false;
+      if (likesDoc.exists) {
+        const likesData = likesDoc.data();
+        const likedMovies = likesData?.likedMovies || [];
+        isLiked = likedMovies.some(
+          (movie: LikedMovie) => movie.imdbId === imdbId
+        );
+      }
+
+      const watchlistDoc = await db
+        .collection("user_watchlist")
+        .doc(userId)
+        .get();
+      let isInWatchlist = false;
+      if (watchlistDoc.exists) {
+        const watchlistData = watchlistDoc.data();
+        const watchlistMovies = watchlistData?.watchlistMovies || [];
+        isInWatchlist = watchlistMovies.some(
+          (movie: WatchlistMovie) => movie.imdbId === imdbId
+        );
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          imdbId: imdbId,
+          isLiked,
+          isInWatchlist,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error checking movie status:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while checking movie status",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+export {
+  SyncUserProfile,
+  LikeMovie,
+  UnlikeMovie,
+  AddToWatchlist,
+  RemoveFromWatchlist,
+  GetUserLikedMovies,
+  GetUserWatchlist,
   SaveUserPreference,
   GetUserPreference,
   UpdateUserPreference,
-
-  // Reviews
   SaveUserReview,
   GetUserReviews,
   DeleteUserReview,
-
-  // Social
   FollowUser,
   UnfollowUser,
   GetUserFollowers,
   GetUserFollowing,
-
-  // Profile
   GetUserProfile,
 };

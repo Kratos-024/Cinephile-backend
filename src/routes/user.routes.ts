@@ -1,19 +1,21 @@
 import { Router } from "express";
 import {
-  // Preferences
   SaveUserPreference,
   GetUserPreference,
   UpdateUserPreference,
-  // Reviews
   SaveUserReview,
   GetUserReviews,
   DeleteUserReview,
-  // Social
   FollowUser,
   UnfollowUser,
   GetUserFollowers,
   GetUserFollowing,
   GetUserProfile,
+  GetUserLikedMovies,
+  LikeMovie,
+  UnlikeMovie,
+  AddToWatchlist,
+  RemoveFromWatchlist,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
@@ -36,5 +38,10 @@ userRouter.route("/followers").get(GetUserFollowers);
 userRouter.route("/following").get(GetUserFollowing);
 userRouter.route("/profile").get(GetUserProfile);
 userRouter.route("/profile/:userId").get(GetUserProfile);
+userRouter.route("/GetUserLikedMovies").post(GetUserLikedMovies);
+userRouter.route("/LikeMovie").post(LikeMovie);
+userRouter.route("/UnlikeMovie").post(UnlikeMovie);
+userRouter.route("/AddToWatchlist").post(AddToWatchlist);
+userRouter.route("/RemoveFromWatchlist").post(RemoveFromWatchlist);
 
 export default userRouter;

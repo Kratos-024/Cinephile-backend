@@ -1,6 +1,6 @@
 import puppeteer, { Page } from "puppeteer";
 
-export class ScrapeTrending {
+export default class Scraper {
   browser: any;
   page: Page | undefined;
   browserOptions: any;
@@ -9,18 +9,17 @@ export class ScrapeTrending {
     const browserOptions = { headless: false };
     this.browserOptions = browserOptions;
   }
-  async start() {
+  async start(link: string) {
     const browser = await puppeteer.launch(this.browserOptions);
     const page = await browser.newPage();
     this.browser = browser;
     this.page = page;
-    await page.goto("https://www.imdb.com/list/ls082250769/", {
+    await page.goto(link, {
       waitUntil: "networkidle2",
     });
-    console.log("gelo");
-    return await this.scrape();
   }
-  async scrape() {
+  async scrapeTrending(link: string) {
+    this.start(link);
     const movieList = await this.page?.$$eval(
       ".ipc-metadata-list-summary-item",
       (elements) => {
@@ -116,5 +115,41 @@ export class ScrapeTrending {
       return [];
     }
     return movieList;
+  }
+  async scrapeMoviePage(link: string) {
+    const videoUrl = await this.scrapeVideos(link);
+    return videoUrl;
+  }
+  async scrapeVideos(link: string) {
+    if (!this.browser || !this.page) {
+      await this.start(link);
+    }
+
+    if (!this.page) throw new Error("Page not initialized");
+
+    // Wait for the videos container
+    await this.page.waitForSelector('[data-testid="grid_first_row_video"]');
+
+    // Scrape the video cards
+    const videos = await this.page.$$eval(
+      '[data-testid="grid_first_row_video"] .video-item',
+      (elements) =>
+        elements.map((el) => {
+          const imgEl = el.querySelector("img.ipc-image");
+          const overlayLink = el.querySelector(
+            'a[data-testid^="videos-slate-overlay-"]'
+          );
+
+          return {
+            title: overlayLink?.getAttribute("aria-label") || "",
+            videoUrl: overlayLink?.getAttribute("href") || "",
+            imageUrl: imgEl?.getAttribute("src") || "",
+            imageAlt: imgEl?.getAttribute("alt") || "",
+          };
+        })
+    );
+    console.log(videos);
+    await this.browser.close();
+    return videos;
   }
 }

@@ -15,7 +15,6 @@ const authenticateUser = asyncHandler(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const authHeader = req.headers.authorization;
-
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         throw new ApiError(
           401,
@@ -30,16 +29,14 @@ const authenticateUser = asyncHandler(
         throw new ApiError(401, "No token provided", "UNAUTHORIZED");
       }
 
-      // Verify the ID token
       const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-      // Attach user info to request
       req.user = {
         uid: decodedToken.uid,
         email: decodedToken.email!,
         displayName: decodedToken.name,
       };
-
+      console.log("camedcamedcamedcamed", decodedToken);
       next();
     } catch (error: any) {
       console.error("Authentication error:", error);

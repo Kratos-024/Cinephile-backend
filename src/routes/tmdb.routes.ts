@@ -3,12 +3,35 @@ import {
   GetTrendingMovies,
   RefreshTrendingMovies,
   GetCacheStatus,
+  GetMovieVideos,
+  ClearMovieVideoCache,
+  GetMovieVideoCacheStatus,
+  cleanupExpiredVideoCache,
+  getTMDbFromIMDb,
 } from "../controllers/tmdb.controller.js";
 
-const tmdbRouter = Router();
+const router = Router();
 
-tmdbRouter.route("/trending/movies").get(GetTrendingMovies);
-tmdbRouter.route("/trending/refresh").post(RefreshTrendingMovies);
-tmdbRouter.route("/trending/status").get(GetCacheStatus);
+router.get("/trending/movies", GetTrendingMovies);
+router.post("/trending/refresh", RefreshTrendingMovies);
+router.get("/trending/cache/status", GetCacheStatus);
+router.route("/videos/:movieId").get(GetMovieVideos);
+router.get("/:movieId/videos/cache/status", GetMovieVideoCacheStatus);
+router.delete("/:movieId/videos/cache", ClearMovieVideoCache);
+router.route("/getid").get(getTMDbFromIMDb);
 
-export default tmdbRouter;
+router.post("/admin/videos/cleanup-cache", async (req, res) => {
+  try {
+    await cleanupExpiredVideoCache();
+    res.status(200).json({
+      success: true,
+      message: "Video cache cleanup completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to cleanup video cache",
+    });
+  }
+});
+export default router;
