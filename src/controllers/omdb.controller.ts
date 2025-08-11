@@ -54,9 +54,9 @@ interface OMDbErrorResponse {
 }
 
 type OMDbResponse = OMDbSearchResponse | OMDbErrorResponse;
-type OMDbDetailResponse = OMDbMovieDetailResponse | OMDbErrorResponse;
+export type OMDbDetailResponse = OMDbMovieDetailResponse | OMDbErrorResponse;
 
-const isOMDbError = (
+export const isOMDbError = (
   data: OMDbResponse | OMDbDetailResponse
 ): data is OMDbErrorResponse => {
   return data.Response === "False";

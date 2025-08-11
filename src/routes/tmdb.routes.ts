@@ -7,6 +7,6 @@ import {
 const router = Router();
 
 router.route("/trending/movies").get(GetTrendingMovies);
-router.route("/moviesdata/data/").post(GetMovieData);
+router.route("/moviesdata/:imdbId").get(GetMovieData);
 
 export default router;

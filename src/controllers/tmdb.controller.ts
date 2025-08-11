@@ -3,6 +3,7 @@ import Scraper from "../data/scrape.js";
 import { ApiError } from "../utils/ApiError.utils.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { Request, Response } from "express";
+import { isOMDbError, type OMDbDetailResponse } from "./omdb.controller.js";
 
 interface IMDBTrendingResponse {
   title: string;
@@ -176,7 +177,7 @@ const storeMovieDataInFirebase = async (
 
 const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
   try {
-    const imdbIdParam = req.body.imdbId;
+    const imdbIdParam = req.params.imdbId;
     if (!imdbIdParam) {
       throw new ApiError(400, "IMDb ID parameter is required");
     }
@@ -196,10 +197,44 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     }
 
     console.log(`Scraping movie data for ${imdbIdParam} from IMDb...`);
+    const apiKey = process.env.OMDB_API_KEY;
+
+    const url = `https://www.omdbapi.com/?i=${imdbIdParam}&apikey=${apiKey}`;
+
     const movieData = await fetchMovieFromIMDb(imdbIdParam);
+    const response = await fetch(url);
+    const data = (await response.json()) as OMDbDetailResponse;
+    if (isOMDbError(data)) {
+      throw new ApiError(404, data.Error, "NOT_FOUND");
+    }
+    const omdbRating = data.Ratings;
+    const storyLine = data.Plot;
+    const genre = data.Genre;
+    const BoxOffice = data.BoxOffice;
+    const Language = data.Language;
+    const title = data.Title;
+    const Released = data.Released;
+    const Runtime = data.Runtime;
+    const Awards = data.Awards;
+    const Director = data.Director;
+    const Rated = data.Rated;
+    const Country = data.Country;
+
+    movieData.Country = Country;
+    movieData.Director = Director;
+    movieData.Released = Released;
+    movieData.Runtime = Runtime;
+    movieData.Awards = Awards;
+    movieData.Language = Language;
+    movieData.storyLine = storyLine;
+    movieData.rating = omdbRating;
+    movieData.genre = genre;
+    movieData.BoxOffice = BoxOffice;
+    movieData.title = title;
+    movieData.Rated = Rated;
 
     await storeMovieDataInFirebase(imdbIdParam, movieData);
-
+    console.log(movieData);
     res.status(200).json({
       success: true,
       imdb_id: imdbIdParam,

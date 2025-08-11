@@ -19,15 +19,23 @@ export default class Scraper {
     if (!this.page) throw new Error("Page not initialized");
 
     try {
-      const [basicInfo, storyline, ratings, cast, videos, images] =
-        await Promise.all([
-          this.scrapeBasicInfo().catch(() => null),
-          this.scrapeStoryline().catch(() => null),
-          this.scrapeRatings().catch(() => null),
-          this.scrapeCast().catch(() => null),
-          this.scrapeVideos().catch(() => null),
-          this.scrapeImages().catch(() => null),
-        ]);
+      const [
+        basicInfo,
+        storyline,
+        ratings,
+        cast,
+        videos,
+        images,
+        videoSources,
+      ] = await Promise.all([
+        this.scrapeBasicInfo().catch(() => null),
+        this.scrapeStoryline().catch(() => null),
+        this.scrapeRatings().catch(() => null),
+        this.scrapeCast().catch(() => null),
+        this.scrapeVideos().catch(() => null),
+        this.scrapeImages().catch(() => null),
+        this.scrapeVideoSources().catch(() => null), // New method
+      ]);
 
       const movieData = {
         url: link,
@@ -38,6 +46,7 @@ export default class Scraper {
         cast,
         videos,
         images,
+        videoSources, // Add video sources to the data
       };
       console.log(movieData);
       await this.close();
@@ -45,6 +54,158 @@ export default class Scraper {
     } catch (error) {
       await this.close();
       throw error;
+    }
+  }
+
+  // New method to scrape video sources from video tags
+  async scrapeVideoSources() {
+    if (!this.page) throw new Error("Page not loaded. Call start first.");
+
+    try {
+      // Wait for video elements to load
+      await this.page.waitForSelector("video", { timeout: 10000 });
+
+      const videoSources = await this.page.evaluate(() => {
+        const videos = document.querySelectorAll("video");
+        const sources: Array<{
+          src: string;
+          type?: string;
+          poster?: string;
+          className?: string;
+          id?: string;
+          preload?: string;
+          controls?: boolean;
+          autoplay?: boolean;
+          muted?: boolean;
+          loop?: boolean;
+          width?: number;
+          height?: number;
+        }> = [];
+
+        videos.forEach((video, index) => {
+          // Get the main video source
+          if (video.src) {
+            sources.push({
+              src: video.src,
+              type: video.getAttribute("type") || "video/mp4",
+              poster: video.poster || "",
+              className: video.className || "",
+              id: video.id || `video-${index}`,
+              preload: video.preload || "",
+              controls: video.controls,
+              autoplay: video.autoplay,
+              muted: video.muted,
+              loop: video.loop,
+              width: video.videoWidth || video.width,
+              height: video.videoHeight || video.height,
+            });
+          }
+
+          // Also check for source elements within the video tag
+          const sourceElements = video.querySelectorAll("source");
+          sourceElements.forEach((source, sourceIndex) => {
+            if (source.src) {
+              sources.push({
+                src: source.src,
+                type: source.type || "video/mp4",
+                poster: video.poster || "",
+                className: video.className || "",
+                id: video.id || `video-${index}-source-${sourceIndex}`,
+                preload: video.preload || "",
+                controls: video.controls,
+                autoplay: video.autoplay,
+                muted: video.muted,
+                loop: video.loop,
+                width: video.videoWidth || video.width,
+                height: video.videoHeight || video.height,
+              });
+            }
+          });
+        });
+
+        return sources;
+      });
+
+      // Also look for video elements specifically in the IMDb video player
+      const imdbVideoSources = await this.page.evaluate(() => {
+        const sources: Array<{
+          src: string;
+          type?: string;
+          poster?: string;
+          className?: string;
+          id?: string;
+          isIMDbPlayer?: boolean;
+        }> = [];
+
+        // Look for IMDb specific video players
+        const jwVideos = document.querySelectorAll(
+          ".jw-video, .jw-media video"
+        );
+        jwVideos.forEach((video: any, index) => {
+          if (video.src) {
+            sources.push({
+              src: video.src,
+              type: video.getAttribute("type") || "video/mp4",
+              poster: video.poster || "",
+              className: video.className || "",
+              id: video.id || `imdb-video-${index}`,
+              isIMDbPlayer: true,
+            });
+          }
+        });
+
+        // Look for any video tags with IMDb-specific classes
+        const imdbVideos = document.querySelectorAll(
+          'video[class*="jw"], video[class*="imdb"]'
+        );
+        imdbVideos.forEach((video: any, index) => {
+          if (video.src) {
+            sources.push({
+              src: video.src,
+              type: video.getAttribute("type") || "video/mp4",
+              poster: video.poster || "",
+              className: video.className || "",
+              id: video.id || `imdb-specific-video-${index}`,
+              isIMDbPlayer: true,
+            });
+          }
+        });
+
+        return sources;
+      });
+
+      // Combine both results and remove duplicates
+      const allSources = [...videoSources, ...imdbVideoSources];
+      const uniqueSources = allSources.filter(
+        (source, index, self) =>
+          index === self.findIndex((s) => s.src === source.src)
+      );
+
+      console.log(`Found ${uniqueSources.length} video sources`);
+      return uniqueSources;
+    } catch (error) {
+      console.log("Video sources not found or failed to load:", error);
+
+      // Fallback: try to find any video elements without waiting
+      try {
+        const fallbackSources = await this.page.evaluate(() => {
+          const videos = document.querySelectorAll("video");
+          return Array.from(videos)
+            .map((video: any, index) => ({
+              src: video.src || "",
+              type: video.getAttribute("type") || "video/mp4",
+              poster: video.poster || "",
+              className: video.className || "",
+              id: video.id || `fallback-video-${index}`,
+            }))
+            .filter((source) => source.src);
+        });
+
+        return fallbackSources;
+      } catch (fallbackError) {
+        console.log("Fallback video scraping also failed:", fallbackError);
+        return [];
+      }
     }
   }
 
