@@ -16,6 +16,7 @@ import {
   UnlikeMovie,
   AddToWatchlist,
   RemoveFromWatchlist,
+  getUserInfo,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
@@ -43,5 +44,6 @@ userRouter.route("/LikeMovie").post(LikeMovie);
 userRouter.route("/UnlikeMovie").post(UnlikeMovie);
 userRouter.route("/AddToWatchlist").post(AddToWatchlist);
 userRouter.route("/RemoveFromWatchlist").post(RemoveFromWatchlist);
+userRouter.route("/getUserInfo").post(getUserInfo);
 
 export default userRouter;

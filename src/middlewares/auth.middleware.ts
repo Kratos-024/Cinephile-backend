@@ -5,6 +5,8 @@ import type { Request, Response, NextFunction } from "express";
 
 interface AuthenticatedRequest extends Request {
   user?: {
+    user_id: string;
+    picture: string;
     uid: string;
     email: string;
     displayName?: string;
@@ -32,11 +34,12 @@ const authenticateUser = asyncHandler(
       const decodedToken = await admin.auth().verifyIdToken(idToken);
 
       req.user = {
+        user_id: decodedToken.user_id,
+        picture: decodedToken.picture || "",
         uid: decodedToken.uid,
         email: decodedToken.email!,
         displayName: decodedToken.name,
       };
-      console.log("camedcamedcamedcamed", decodedToken);
       next();
     } catch (error: any) {
       console.error("Authentication error:", error);

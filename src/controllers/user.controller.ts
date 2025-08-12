@@ -1,5 +1,6 @@
 import admin, { db } from "../config/firebase.config.js";
 import { ApiError } from "../utils/ApiError.utils.js";
+import { apiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { Request, Response } from "express";
 
@@ -51,89 +52,38 @@ interface AuthenticatedRequest extends Request {
     displayName?: string;
   };
 }
+interface LikedMovie {
+  tmdbId: number;
+  imdbId?: string;
+  title: string;
+  poster_path?: string;
+  release_date?: string;
+  vote_average?: number;
+  likedAt: string;
+}
 
-// Profile Sync Controller (replaces auth functions)
-const SyncUserProfile = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const { uid, email, displayName, photoURL } = req.body;
-      const authenticatedUid = req.user?.uid;
+interface WatchlistMovie {
+  imdbId?: string;
+  title: string;
+  poster_path?: string;
+  release_date?: string;
+  vote_average?: string;
+  addedAt: string;
+}
 
-      // Verify the requesting user matches the profile being synced
-      if (uid !== authenticatedUid) {
-        throw new ApiError(
-          403,
-          "Cannot sync profile for different user",
-          "FORBIDDEN"
-        );
-      }
+interface UserLikes {
+  userId: string;
+  likedMovies: LikedMovie[];
+  totalLikes: number;
+  updatedAt: any;
+}
 
-      // Check if user profile already exists
-      const existingProfile = await db
-        .collection("user_profiles")
-        .doc(uid)
-        .get();
-
-      if (existingProfile.exists) {
-        // Update existing profile
-        const updateData = {
-          email,
-          displayName: displayName || existingProfile.data()?.displayName,
-          photoURL: photoURL || existingProfile.data()?.photoURL,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        await db.collection("user_profiles").doc(uid).update(updateData);
-
-        res.status(200).json({
-          success: true,
-          message: "User profile updated successfully",
-          data: { uid, action: "updated" },
-        });
-      } else {
-        // Create new profile
-        const newProfile: UserProfile = {
-          uid,
-          email,
-          displayName: displayName || null,
-          photoURL: photoURL || null,
-          followers: [],
-          following: [],
-          followersCount: 0,
-          followingCount: 0,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        await db.collection("user_profiles").doc(uid).set(newProfile);
-
-        res.status(201).json({
-          success: true,
-          message: "User profile created successfully",
-          data: { uid, action: "created" },
-        });
-      }
-    } catch (error: any) {
-      console.error("Error syncing user profile:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Something went wrong while syncing profile",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
+interface UserWatchlist {
+  userId: string;
+  watchlistMovies: WatchlistMovie[];
+  totalWatchlist: number;
+  updatedAt: any;
+}
 
 const SaveUserPreference = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
@@ -348,10 +298,10 @@ const SaveUserReview = asyncHandler(
         );
       }
 
-      if (rating && (rating < 1 || rating > 10)) {
+      if (rating && (rating < 1 || rating > 5)) {
         throw new ApiError(
           400,
-          "Rating must be between 1 and 10",
+          "Rating must be between 1 and 5",
           "BAD_REQUEST"
         );
       }
@@ -845,39 +795,6 @@ const GetUserProfile = asyncHandler(
   }
 );
 
-interface LikedMovie {
-  tmdbId: number;
-  imdbId?: string;
-  title: string;
-  poster_path?: string;
-  release_date?: string;
-  vote_average?: number;
-  likedAt: string;
-}
-
-interface WatchlistMovie {
-  imdbId?: string;
-  title: string;
-  poster_path?: string;
-  release_date?: string;
-  vote_average?: string;
-  addedAt: string;
-}
-
-interface UserLikes {
-  userId: string;
-  likedMovies: LikedMovie[];
-  totalLikes: number;
-  updatedAt: any;
-}
-
-interface UserWatchlist {
-  userId: string;
-  watchlistMovies: WatchlistMovie[];
-  totalWatchlist: number;
-  updatedAt: any;
-}
-
 const LikeMovie = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -1350,80 +1267,22 @@ const GetUserWatchlist = asyncHandler(
   }
 );
 
-const CheckMovieStatus = asyncHandler(
+const getUserInfo = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { imdbId } = req.params;
-      const userId = req.user?.uid;
-
-      if (!userId) {
-        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
-      }
-
-      if (!imdbId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter: tmdbId",
-          "BAD_REQUEST"
+      res.send(apiResponse(req?.user, "User get successfully", 200));
+    } catch (error) {
+      console.log(error);
+      res
+        .status(500)
+        .json(
+          new ApiError(404, "Something went wrong while retrieving user info")
         );
-      }
-
-      // Check if movie is liked
-      const likesDoc = await db.collection("user_likes").doc(userId).get();
-      let isLiked = false;
-      if (likesDoc.exists) {
-        const likesData = likesDoc.data();
-        const likedMovies = likesData?.likedMovies || [];
-        isLiked = likedMovies.some(
-          (movie: LikedMovie) => movie.imdbId === imdbId
-        );
-      }
-
-      const watchlistDoc = await db
-        .collection("user_watchlist")
-        .doc(userId)
-        .get();
-      let isInWatchlist = false;
-      if (watchlistDoc.exists) {
-        const watchlistData = watchlistDoc.data();
-        const watchlistMovies = watchlistData?.watchlistMovies || [];
-        isInWatchlist = watchlistMovies.some(
-          (movie: WatchlistMovie) => movie.imdbId === imdbId
-        );
-      }
-
-      res.status(200).json({
-        success: true,
-        data: {
-          imdbId: imdbId,
-          isLiked,
-          isInWatchlist,
-        },
-      });
-    } catch (error: any) {
-      console.error("Error checking movie status:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Something went wrong while checking movie status",
-          type: "INTERNAL_ERROR",
-        });
-      }
     }
   }
 );
-
 export {
-  SyncUserProfile,
+  getUserInfo,
   LikeMovie,
   UnlikeMovie,
   AddToWatchlist,
