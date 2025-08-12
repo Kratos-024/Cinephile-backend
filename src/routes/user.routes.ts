@@ -30,7 +30,7 @@ userRouter.route("/preferences/:userId").get(GetUserPreference);
 userRouter.route("/reviews").post(SaveUserReview);
 userRouter.route("/reviews").get(GetUserReviews);
 userRouter.route("/reviews/:userId").get(GetUserReviews);
-userRouter.route("/reviews/:reviewId").delete(DeleteUserReview);
+userRouter.route("/reviews/:imdbId").delete(DeleteUserReview);
 userRouter.route("/follow").post(FollowUser);
 userRouter.route("/unfollow").post(UnfollowUser);
 userRouter.route("/followers/:userId").get(GetUserFollowers);

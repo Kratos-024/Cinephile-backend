@@ -3,6 +3,10 @@ import { ApiError } from "../utils/ApiError.utils.js";
 import { apiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { Request, Response } from "express";
+import {
+  deleteCommentFromMovie,
+  saveCommentToMovie,
+} from "./tmdb.controller.js";
 
 interface SelectedMovie {
   tmdbId: number;
@@ -24,9 +28,11 @@ interface UserPreference {
 interface UserReview {
   id: string;
   userId: string;
-  tmdbId: number;
+  imdb_id: number;
   title: string;
-  review: string;
+  photoURL: string;
+  displayName: string;
+  comment: string;
   rating?: number;
   timestamp: string;
   updatedAt: any;
@@ -283,17 +289,18 @@ const UpdateUserPreference = asyncHandler(
 const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { tmdbId, title, review, rating } = req.body;
+      const { imdb_id, title, comment, rating, photoURL, displayName } =
+        req.body;
       const userId = req.user?.uid;
 
       if (!userId) {
         throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
       }
 
-      if (!tmdbId || !title || !review) {
+      if (!imdb_id || !title || !comment) {
         throw new ApiError(
           400,
-          "Missing required parameters: tmdbId, title, or review",
+          "Missing required parameters: imdbId, title, or comment",
           "BAD_REQUEST"
         );
       }
@@ -305,15 +312,24 @@ const SaveUserReview = asyncHandler(
           "BAD_REQUEST"
         );
       }
+      await saveCommentToMovie(imdb_id, {
+        userId,
+        userDisplayName: displayName,
+        userPhotoURL: photoURL,
+        comment,
+        rating,
+      });
 
-      const reviewId = `${userId}_${tmdbId}`;
+      const reviewId = `${userId}_${imdb_id}`;
 
       const reviewData: UserReview = {
         id: reviewId,
         userId,
-        tmdbId: Number(tmdbId),
+        imdb_id: imdb_id,
         title,
-        review,
+        comment,
+        photoURL,
+        displayName,
         rating: rating || undefined,
         timestamp: new Date().toISOString(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -328,7 +344,7 @@ const SaveUserReview = asyncHandler(
         data: {
           reviewId,
           userId,
-          tmdbId,
+          imdb_id,
           title,
         },
       });
@@ -357,31 +373,28 @@ const SaveUserReview = asyncHandler(
 const GetUserReviews = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.uid || req.params.userId;
-      const { limit = 10, offset = 0 } = req.query;
+      const userId = req.params.userId || req.user?.uid;
 
       if (!userId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'userId'",
-          "BAD_REQUEST"
-        );
+        throw new ApiError(400, "User ID is required", "BAD_REQUEST");
       }
 
-      const snapshot = await db
+      const reviewsSnapshot = await db
         .collection("user_reviews")
         .where("userId", "==", userId)
         .orderBy("timestamp", "desc")
-        .limit(Number(limit))
-        .offset(Number(offset))
         .get();
 
-      const reviews = snapshot.docs.map((doc) => doc.data());
+      const reviews = reviewsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
       res.status(200).json({
         success: true,
         data: reviews,
-        total: reviews.length,
+        total_reviews: reviews.length,
+        user_id: userId,
       });
     } catch (error: any) {
       console.error("Error getting user reviews:", error);
@@ -397,7 +410,7 @@ const GetUserReviews = asyncHandler(
         res.status(500).json({
           success: false,
           status: 500,
-          message: "Something went wrong while retrieving reviews",
+          message: "Failed to get user reviews",
           type: "INTERNAL_ERROR",
         });
       }
@@ -408,46 +421,34 @@ const GetUserReviews = asyncHandler(
 const DeleteUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { reviewId } = req.params;
+      const { imdbId } = req.params;
       const userId = req.user?.uid;
 
       if (!userId) {
         throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
       }
-
-      if (!reviewId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'reviewId'",
-          "BAD_REQUEST"
-        );
+      if (!imdbId) {
+        throw new ApiError(400, "IMDb ID is required", "BAD_REQUEST");
       }
-
-      const docRef = db.collection("user_reviews").doc(reviewId);
-      const doc = await docRef.get();
-
-      if (!doc.exists) {
+      const reviewId = `${userId}_${imdbId}`;
+      const reviewDoc = await db.collection("user_reviews").doc(reviewId).get();
+      if (!reviewDoc.exists) {
         throw new ApiError(404, "Review not found", "NOT_FOUND");
       }
-
-      const reviewData = doc.data();
-      if (reviewData?.userId !== userId) {
-        throw new ApiError(
-          403,
-          "Not authorized to delete this review",
-          "FORBIDDEN"
-        );
-      }
-
-      await docRef.delete();
+      await db.collection("user_reviews").doc(reviewId).delete();
+      await deleteCommentFromMovie(imdbId, userId);
 
       res.status(200).json({
         success: true,
-        message: "Review deleted successfully",
-        data: { reviewId },
+        message: "Review deleted successfully from both locations",
+        data: {
+          reviewId,
+          userId,
+          imdbId,
+        },
       });
     } catch (error: any) {
-      console.error("Error deleting review:", error);
+      console.error("Error deleting user review:", error);
 
       if (error instanceof ApiError) {
         res.status(error.statusCode).json({
@@ -458,7 +459,6 @@ const DeleteUserReview = asyncHandler(
         });
       } else {
         res.status(500).json({
-          success: false,
           status: 500,
           message: "Something went wrong while deleting review",
           type: "INTERNAL_ERROR",

@@ -259,5 +259,128 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 });
+const saveCommentToMovie = async (
+  imdbId: string,
+  commentData: {
+    userId: string;
+    userDisplayName: string;
+    userPhotoURL?: string;
+    comment: string;
+    rating?: number;
+  }
+): Promise<void> => {
+  try {
+    const commentId = `${commentData.userId}_${imdbId}`;
+    const timestamp = new Date().toISOString();
 
-export { GetTrendingMovies, GetMovieData };
+    const movieComment = {
+      id: commentId,
+      userId: commentData.userId,
+      userDisplayName: commentData.userDisplayName,
+      userPhotoURL: commentData.userPhotoURL,
+      comment: commentData.comment,
+      rating: commentData.rating,
+      timestamp,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Save comment under movie document
+    await db
+      .collection("movies")
+      .doc(imdbId)
+      .collection("comments")
+      .doc(commentId)
+      .set(movieComment, { merge: true });
+
+    console.log(`Comment saved for movie ${imdbId}`);
+  } catch (error) {
+    console.error("Error saving comment to movie:", error);
+    throw new ApiError(500, "Failed to save comment to movie");
+  }
+};
+const deleteCommentFromMovie = async (
+  imdbId: string,
+  userId: string
+): Promise<void> => {
+  try {
+    const commentId = `${userId}_${imdbId}`;
+
+    const commentDoc = await db
+      .collection("movies")
+      .doc(imdbId)
+      .collection("comments")
+      .doc(commentId)
+      .get();
+
+    if (!commentDoc.exists) {
+      console.log(`Comment ${commentId} not found in movie ${imdbId}`);
+      return;
+    }
+
+    await db
+      .collection("movies")
+      .doc(imdbId)
+      .collection("comments")
+      .doc(commentId)
+      .delete();
+
+    console.log(`Comment deleted from movie ${imdbId}`);
+  } catch (error) {
+    console.error("Error deleting comment from movie:", error);
+    throw new ApiError(500, "Failed to delete comment from movie");
+  }
+};
+const GetMovieReviews = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { imdbId } = req.params;
+
+    if (!imdbId) {
+      throw new ApiError(400, "IMDb ID is required", "BAD_REQUEST");
+    }
+
+    const reviewsSnapshot = await db
+      .collection("movies")
+      .doc(imdbId)
+      .collection("comments")
+      .orderBy("timestamp", "desc")
+      .get();
+
+    const reviews = reviewsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: reviews,
+      total_reviews: reviews.length,
+      imdb_id: imdbId,
+    });
+  } catch (error: any) {
+    console.error("Error getting movie reviews:", error);
+
+    if (error instanceof ApiError) {
+      res.status(error.statusCode).json({
+        success: false,
+        status: error.statusCode,
+        message: error.message,
+        type: error.type,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        status: 500,
+        message: "Failed to get movie reviews",
+        type: "INTERNAL_ERROR",
+      });
+    }
+  }
+});
+
+export {
+  GetTrendingMovies,
+  GetMovieData,
+  saveCommentToMovie,
+  deleteCommentFromMovie,
+  GetMovieReviews,
+};
