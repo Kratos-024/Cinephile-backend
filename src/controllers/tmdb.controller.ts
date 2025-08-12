@@ -349,7 +349,7 @@ const GetMovieReviews = asyncHandler(async (req: Request, res: Response) => {
       id: doc.id,
       ...doc.data(),
     }));
-
+    console.log(reviews);
     res.status(200).json({
       success: true,
       data: reviews,

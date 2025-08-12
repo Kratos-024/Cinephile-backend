@@ -31,7 +31,7 @@ interface UserReview {
   imdb_id: number;
   title: string;
   photoURL: string;
-  displayName: string;
+  userDisplayName: string;
   comment: string;
   rating?: number;
   timestamp: string;
@@ -289,7 +289,8 @@ const UpdateUserPreference = asyncHandler(
 const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { imdb_id, title, comment, rating, photoURL, displayName } =
+      console.log(req.body);
+      const { imdb_id, title, comment, rating, photoURL, userDisplayName } =
         req.body;
       const userId = req.user?.uid;
 
@@ -314,7 +315,7 @@ const SaveUserReview = asyncHandler(
       }
       await saveCommentToMovie(imdb_id, {
         userId,
-        userDisplayName: displayName,
+        userDisplayName: userDisplayName,
         userPhotoURL: photoURL,
         comment,
         rating,
@@ -329,7 +330,7 @@ const SaveUserReview = asyncHandler(
         title,
         comment,
         photoURL,
-        displayName,
+        userDisplayName,
         rating: rating || undefined,
         timestamp: new Date().toISOString(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
