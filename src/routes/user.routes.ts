@@ -28,7 +28,7 @@ userRouter.route("/preferences").get(GetUserPreference);
 userRouter.route("/preferences").put(UpdateUserPreference);
 userRouter.route("/preferences/:userId").get(GetUserPreference);
 userRouter.route("/reviews").post(SaveUserReview);
-userRouter.route("/reviews").get(GetUserReviews);
+// userRouter.route("/reviews").get(GetUserReviews);
 userRouter.route("/reviews/:userId").get(GetUserReviews);
 userRouter.route("/reviews/:imdbId").delete(DeleteUserReview);
 userRouter.route("/follow").post(FollowUser);

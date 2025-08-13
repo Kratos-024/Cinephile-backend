@@ -262,11 +262,13 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
 const saveCommentToMovie = async (
   imdbId: string,
   commentData: {
+    imdb_id: string;
     userId: string;
     userDisplayName: string;
     userPhotoURL?: string;
     comment: string;
     rating?: number;
+    title: string;
   }
 ): Promise<void> => {
   try {
@@ -280,11 +282,11 @@ const saveCommentToMovie = async (
       userPhotoURL: commentData.userPhotoURL,
       comment: commentData.comment,
       rating: commentData.rating,
+      title: commentData.title,
+      imdb_id: commentData.imdb_id,
       timestamp,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
-
-    // Save comment under movie document
     await db
       .collection("movies")
       .doc(imdbId)
@@ -349,7 +351,6 @@ const GetMovieReviews = asyncHandler(async (req: Request, res: Response) => {
       id: doc.id,
       ...doc.data(),
     }));
-    console.log(reviews);
     res.status(200).json({
       success: true,
       data: reviews,

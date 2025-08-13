@@ -30,7 +30,7 @@ interface UserReview {
   userId: string;
   imdb_id: number;
   title: string;
-  photoURL: string;
+  userPhotoURL: string;
   userDisplayName: string;
   comment: string;
   rating?: number;
@@ -290,7 +290,7 @@ const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       console.log(req.body);
-      const { imdb_id, title, comment, rating, photoURL, userDisplayName } =
+      const { imdb_id, title, comment, rating, userPhotoURL, userDisplayName } =
         req.body;
       const userId = req.user?.uid;
 
@@ -313,12 +313,15 @@ const SaveUserReview = asyncHandler(
           "BAD_REQUEST"
         );
       }
+
       await saveCommentToMovie(imdb_id, {
+        imdb_id: imdb_id,
         userId,
         userDisplayName: userDisplayName,
-        userPhotoURL: photoURL,
+        userPhotoURL: userPhotoURL,
         comment,
         rating,
+        title,
       });
 
       const reviewId = `${userId}_${imdb_id}`;
@@ -329,15 +332,21 @@ const SaveUserReview = asyncHandler(
         imdb_id: imdb_id,
         title,
         comment,
-        photoURL,
+        userPhotoURL,
         userDisplayName,
         rating: rating || undefined,
         timestamp: new Date().toISOString(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
-      const docRef = db.collection("user_reviews").doc(reviewId);
-      await docRef.set(reviewData, { merge: true });
+      // Store review as subcollection inside user_profiles
+      const reviewRef = db
+        .collection("user_profiles")
+        .doc(userId)
+        .collection("reviews")
+        .doc(imdb_id); // Using imdb_id as document ID
+
+      await reviewRef.set(reviewData, { merge: true });
 
       res.status(200).json({
         success: true,
@@ -375,22 +384,24 @@ const GetUserReviews = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.params.userId || req.user?.uid;
-
+      console.log("reviewsreviewsreviewsreviews", userId);
       if (!userId) {
         throw new ApiError(400, "User ID is required", "BAD_REQUEST");
       }
-
       const reviewsSnapshot = await db
-        .collection("user_reviews")
-        .where("userId", "==", userId)
+        .collection("user_profiles")
+        .doc(userId)
+        .collection("reviews")
         .orderBy("timestamp", "desc")
         .get();
+      console.log("reviewsSnapshotreviewsSnapshot", reviewsSnapshot);
 
       const reviews = reviewsSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
+      console.log("reviewsreviewsreviewsreviews", reviews);
       res.status(200).json({
         success: true,
         data: reviews,
@@ -431,25 +442,31 @@ const DeleteUserReview = asyncHandler(
       if (!imdbId) {
         throw new ApiError(400, "IMDb ID is required", "BAD_REQUEST");
       }
-      const reviewId = `${userId}_${imdbId}`;
-      const reviewDoc = await db.collection("user_reviews").doc(reviewId).get();
+      const reviewRef = db
+        .collection("user_profiles")
+        .doc(userId)
+        .collection("reviews")
+        .doc(imdbId);
+
+      const reviewDoc = await reviewRef.get();
       if (!reviewDoc.exists) {
         throw new ApiError(404, "Review not found", "NOT_FOUND");
       }
-      await db.collection("user_reviews").doc(reviewId).delete();
+
+      await reviewRef.delete();
       await deleteCommentFromMovie(imdbId, userId);
 
       res.status(200).json({
         success: true,
         message: "Review deleted successfully from both locations",
         data: {
-          reviewId,
+          reviewId: `${userId}_${imdbId}`,
           userId,
           imdbId,
         },
       });
     } catch (error: any) {
-      console.error("Error deleting user review:", error);
+      console.error("Error getting user reviews:", error);
 
       if (error instanceof ApiError) {
         res.status(error.statusCode).json({
@@ -460,8 +477,9 @@ const DeleteUserReview = asyncHandler(
         });
       } else {
         res.status(500).json({
+          success: false,
           status: 500,
-          message: "Something went wrong while deleting review",
+          message: "Failed to get user reviews",
           type: "INTERNAL_ERROR",
         });
       }
@@ -625,7 +643,6 @@ const GetUserFollowers = asyncHandler(
       const userData = doc.data();
       const followers = userData?.followers || [];
 
-      // Get follower profiles
       const followerProfiles = [];
       if (followers.length > 0) {
         const followerDocs = await Promise.all(
@@ -761,14 +778,46 @@ const GetUserProfile = asyncHandler(
           "BAD_REQUEST"
         );
       }
+      const [userProfileDoc, watchlistSnapshot, reviewsSnapshot] =
+        await Promise.all([
+          db.collection("user_profiles").doc(userId).get(),
+          db.collection("userWatchlist").where("userId", "==", userId).get(),
+          db
+            .collection("user_profiles")
+            .doc(userId)
+            .collection("reviews")
+            .orderBy("timestamp", "desc")
+            .get(),
+        ]);
 
-      const doc = await db.collection("user_profiles").doc(userId).get();
-
-      if (!doc.exists) {
+      if (!userProfileDoc.exists) {
         throw new ApiError(404, "User profile not found", "NOT_FOUND");
       }
-
-      const userData = doc.data();
+      const userProfile = {
+        userId,
+        ...userProfileDoc.data(),
+      };
+      const watchlist = watchlistSnapshot.empty
+        ? []
+        : watchlistSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+      const reviews = reviewsSnapshot.empty
+        ? []
+        : reviewsSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+      const userData = {
+        profile: userProfile,
+        watchlist,
+        reviews,
+        stats: {
+          totalWatchlistItems: watchlist.length,
+          totalReviews: reviews.length,
+        },
+      };
 
       res.status(200).json({
         success: true,
