@@ -26,6 +26,8 @@ interface UserPreference {
 }
 
 interface UserReview {
+  movieTitle: string;
+  poster: string;
   id: string;
   userId: string;
   imdb_id: number;
@@ -290,8 +292,16 @@ const SaveUserReview = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       console.log(req.body);
-      const { imdb_id, title, comment, rating, userPhotoURL, userDisplayName } =
-        req.body;
+      const {
+        imdb_id,
+        movieTitle,
+        poster,
+        title,
+        comment,
+        rating,
+        userPhotoURL,
+        userDisplayName,
+      } = req.body;
       const userId = req.user?.uid;
 
       if (!userId) {
@@ -315,6 +325,8 @@ const SaveUserReview = asyncHandler(
       }
 
       await saveCommentToMovie(imdb_id, {
+        movieTitle,
+        poster,
         imdb_id: imdb_id,
         userId,
         userDisplayName: userDisplayName,
@@ -327,6 +339,8 @@ const SaveUserReview = asyncHandler(
       const reviewId = `${userId}_${imdb_id}`;
 
       const reviewData: UserReview = {
+        movieTitle,
+        poster,
         id: reviewId,
         userId,
         imdb_id: imdb_id,
@@ -339,12 +353,11 @@ const SaveUserReview = asyncHandler(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
-      // Store review as subcollection inside user_profiles
       const reviewRef = db
         .collection("user_profiles")
         .doc(userId)
         .collection("reviews")
-        .doc(imdb_id); // Using imdb_id as document ID
+        .doc(imdb_id);
 
       await reviewRef.set(reviewData, { merge: true });
 
@@ -373,56 +386,6 @@ const SaveUserReview = asyncHandler(
           success: false,
           status: 500,
           message: "Something went wrong while saving review",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
-
-const GetUserReviews = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.params.userId || req.user?.uid;
-      console.log("reviewsreviewsreviewsreviews", userId);
-      if (!userId) {
-        throw new ApiError(400, "User ID is required", "BAD_REQUEST");
-      }
-      const reviewsSnapshot = await db
-        .collection("user_profiles")
-        .doc(userId)
-        .collection("reviews")
-        .orderBy("timestamp", "desc")
-        .get();
-      console.log("reviewsSnapshotreviewsSnapshot", reviewsSnapshot);
-
-      const reviews = reviewsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      console.log("reviewsreviewsreviewsreviews", reviews);
-      res.status(200).json({
-        success: true,
-        data: reviews,
-        total_reviews: reviews.length,
-        user_id: userId,
-      });
-    } catch (error: any) {
-      console.error("Error getting user reviews:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Failed to get user reviews",
           type: "INTERNAL_ERROR",
         });
       }
@@ -511,7 +474,6 @@ const FollowUser = asyncHandler(
 
       const batch = db.batch();
 
-      // Update current user's following list
       const userRef = db.collection("user_profiles").doc(userId);
       batch.update(userRef, {
         following: admin.firestore.FieldValue.arrayUnion(targetUserId),
@@ -519,7 +481,6 @@ const FollowUser = asyncHandler(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Update target user's followers list
       const targetUserRef = db.collection("user_profiles").doc(targetUserId);
       batch.update(targetUserRef, {
         followers: admin.firestore.FieldValue.arrayUnion(userId),
@@ -556,123 +517,36 @@ const FollowUser = asyncHandler(
   }
 );
 
-const UnfollowUser = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const { targetUserId } = req.body;
-      const userId = req.user?.uid;
-
-      if (!userId) {
-        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
-      }
-
-      if (!targetUserId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'targetUserId'",
-          "BAD_REQUEST"
-        );
-      }
-
-      const batch = db.batch();
-
-      // Update current user's following list
-      const userRef = db.collection("user_profiles").doc(userId);
-      batch.update(userRef, {
-        following: admin.firestore.FieldValue.arrayRemove(targetUserId),
-        followingCount: admin.firestore.FieldValue.increment(-1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      // Update target user's followers list
-      const targetUserRef = db.collection("user_profiles").doc(targetUserId);
-      batch.update(targetUserRef, {
-        followers: admin.firestore.FieldValue.arrayRemove(userId),
-        followersCount: admin.firestore.FieldValue.increment(-1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      await batch.commit();
-
-      res.status(200).json({
-        success: true,
-        message: "User unfollowed successfully",
-        data: { userId, targetUserId },
-      });
-    } catch (error: any) {
-      console.error("Error unfollowing user:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Something went wrong while unfollowing user",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
-
-const GetUserFollowers = asyncHandler(
+const GetUserReviews = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.params.userId || req.user?.uid;
-
+      console.log("reviewsreviewsreviewsreviews", userId);
       if (!userId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'userId'",
-          "BAD_REQUEST"
-        );
+        throw new ApiError(400, "User ID is required", "BAD_REQUEST");
       }
+      const reviewsSnapshot = await db
+        .collection("user_profiles")
+        .doc(userId)
+        .collection("reviews")
+        .orderBy("timestamp", "desc")
+        .get();
+      console.log("reviewsSnapshotreviewsSnapshot", reviewsSnapshot);
 
-      const doc = await db.collection("user_profiles").doc(userId).get();
+      const reviews = reviewsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
-      if (!doc.exists) {
-        throw new ApiError(404, "User profile not found", "NOT_FOUND");
-      }
-
-      const userData = doc.data();
-      const followers = userData?.followers || [];
-
-      const followerProfiles = [];
-      if (followers.length > 0) {
-        const followerDocs = await Promise.all(
-          followers.map((followerId: string) =>
-            db.collection("user_profiles").doc(followerId).get()
-          )
-        );
-
-        for (const followerDoc of followerDocs) {
-          if (followerDoc.exists) {
-            const data = followerDoc.data();
-            followerProfiles.push({
-              uid: data?.uid,
-              displayName: data?.displayName,
-              photoURL: data?.photoURL,
-              email: data?.email,
-            });
-          }
-        }
-      }
-
+      console.log("reviewsreviewsreviewsreviews", reviews);
       res.status(200).json({
         success: true,
-        data: {
-          followers: followerProfiles,
-          followersCount: followers.length,
-        },
+        data: reviews,
+        total_reviews: reviews.length,
+        user_id: userId,
       });
     } catch (error: any) {
-      console.error("Error getting followers:", error);
+      console.error("Error getting user reviews:", error);
 
       if (error instanceof ApiError) {
         res.status(error.statusCode).json({
@@ -685,159 +559,7 @@ const GetUserFollowers = asyncHandler(
         res.status(500).json({
           success: false,
           status: 500,
-          message: "Something went wrong while getting followers",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
-
-const GetUserFollowing = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.params.userId || req.user?.uid;
-
-      if (!userId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'userId'",
-          "BAD_REQUEST"
-        );
-      }
-
-      const doc = await db.collection("user_profiles").doc(userId).get();
-
-      if (!doc.exists) {
-        throw new ApiError(404, "User profile not found", "NOT_FOUND");
-      }
-
-      const userData = doc.data();
-      const following = userData?.following || [];
-
-      // Get following profiles
-      const followingProfiles = [];
-      if (following.length > 0) {
-        const followingDocs = await Promise.all(
-          following.map((followingId: string) =>
-            db.collection("user_profiles").doc(followingId).get()
-          )
-        );
-
-        for (const followingDoc of followingDocs) {
-          if (followingDoc.exists) {
-            const data = followingDoc.data();
-            followingProfiles.push({
-              uid: data?.uid,
-              displayName: data?.displayName,
-              photoURL: data?.photoURL,
-              email: data?.email,
-            });
-          }
-        }
-      }
-
-      res.status(200).json({
-        success: true,
-        data: {
-          following: followingProfiles,
-          followingCount: following.length,
-        },
-      });
-    } catch (error: any) {
-      console.error("Error getting following:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Something went wrong while getting following",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
-
-const GetUserProfile = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.params.userId || req.user?.uid;
-
-      if (!userId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'userId'",
-          "BAD_REQUEST"
-        );
-      }
-      const [userProfileDoc, watchlistSnapshot, reviewsSnapshot] =
-        await Promise.all([
-          db.collection("user_profiles").doc(userId).get(),
-          db.collection("userWatchlist").where("userId", "==", userId).get(),
-          db
-            .collection("user_profiles")
-            .doc(userId)
-            .collection("reviews")
-            .orderBy("timestamp", "desc")
-            .get(),
-        ]);
-
-      if (!userProfileDoc.exists) {
-        throw new ApiError(404, "User profile not found", "NOT_FOUND");
-      }
-      const userProfile = {
-        userId,
-        ...userProfileDoc.data(),
-      };
-      const watchlist = watchlistSnapshot.empty
-        ? []
-        : watchlistSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-      const reviews = reviewsSnapshot.empty
-        ? []
-        : reviewsSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-      const userData = {
-        profile: userProfile,
-        watchlist,
-        reviews,
-        stats: {
-          totalWatchlistItems: watchlist.length,
-          totalReviews: reviews.length,
-        },
-      };
-
-      res.status(200).json({
-        success: true,
-        data: userData,
-      });
-    } catch (error: any) {
-      console.error("Error getting user profile:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          status: 500,
-          message: "Something went wrong while getting profile",
+          message: "Failed to get user reviews",
           type: "INTERNAL_ERROR",
         });
       }
@@ -1090,6 +812,7 @@ const AddToWatchlist = asyncHandler(
       const { imdbId, title, poster_path, release_date, vote_average } =
         req.body;
       const userId = req.user?.uid;
+
       if (!userId) {
         throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
       }
@@ -1097,7 +820,7 @@ const AddToWatchlist = asyncHandler(
       if (!imdbId || !title) {
         throw new ApiError(
           400,
-          "Missing required parameters: tmdbId and title",
+          "Missing required parameters: imdbId and title",
           "BAD_REQUEST"
         );
       }
@@ -1149,6 +872,7 @@ const AddToWatchlist = asyncHandler(
         message: "Movie added to watchlist successfully",
         data: {
           userId,
+          imdbId,
           title,
           addedAt: watchlistMovie.addedAt,
         },
@@ -1188,7 +912,7 @@ const RemoveFromWatchlist = asyncHandler(
       if (!imdbId) {
         throw new ApiError(
           400,
-          "Missing required parameter: tmdbId",
+          "Missing required parameter: imdbId",
           "BAD_REQUEST"
         );
       }
@@ -1222,7 +946,7 @@ const RemoveFromWatchlist = asyncHandler(
         message: "Movie removed from watchlist successfully",
         data: {
           userId,
-          imdbId: imdbId,
+          imdbId,
           removedAt: new Date().toISOString(),
         },
       });
@@ -1272,6 +996,8 @@ const GetUserWatchlist = asyncHandler(
             userId,
             watchlistMovies: [],
             totalWatchlist: 0,
+            currentPage: 1,
+            totalPages: 0,
           },
         });
       }
@@ -1279,11 +1005,16 @@ const GetUserWatchlist = asyncHandler(
       const userData = doc.data();
       const allWatchlist = userData?.watchlistMovies || [];
 
-      // Apply pagination
       const startIndex = Number(offset);
       const endIndex = startIndex + Number(limit);
       const paginatedWatchlist = allWatchlist.slice(startIndex, endIndex);
-
+      console.log({
+        userId,
+        watchlistMovies: paginatedWatchlist,
+        totalWatchlist: allWatchlist.length,
+        currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
+        totalPages: Math.ceil(allWatchlist.length / Number(limit)),
+      });
       res.status(200).json({
         success: true,
         message: "Watchlist retrieved successfully",
@@ -1317,6 +1048,145 @@ const GetUserWatchlist = asyncHandler(
   }
 );
 
+const GetUserProfile = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.params.userId || req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'userId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const [userProfileDoc, watchlistDoc, reviewsSnapshot] = await Promise.all(
+        [
+          db.collection("user_profiles").doc(userId).get(),
+          db.collection("user_watchlist").doc(userId).get(),
+          db
+            .collection("user_profiles")
+            .doc(userId)
+            .collection("reviews")
+            .orderBy("timestamp", "desc")
+            .get(),
+        ]
+      );
+
+      if (!userProfileDoc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
+      }
+
+      const userProfileData = userProfileDoc.data();
+      const followers = userProfileData?.followers || [];
+      const following = userProfileData?.following || [];
+
+      const [followerProfiles, followingProfiles] = await Promise.all([
+        followers.length > 0
+          ? Promise.all(
+              followers.map(async (followerId: string) => {
+                const followerDoc = await db
+                  .collection("user_profiles")
+                  .doc(followerId)
+                  .get();
+                if (followerDoc.exists) {
+                  const data = followerDoc.data();
+                  return {
+                    uid: followerId,
+                    displayName: data?.displayName || "",
+                    photoURL: data?.photoURL || "",
+                    email: data?.email || "",
+                  };
+                }
+                return null;
+              })
+            ).then((profiles) => profiles.filter((profile) => profile !== null))
+          : Promise.resolve([]),
+        following.length > 0
+          ? Promise.all(
+              following.map(async (followingId: string) => {
+                const followingDoc = await db
+                  .collection("user_profiles")
+                  .doc(followingId)
+                  .get();
+                if (followingDoc.exists) {
+                  const data = followingDoc.data();
+                  return {
+                    uid: followingId,
+                    displayName: data?.displayName || "",
+                    photoURL: data?.photoURL || "",
+                    email: data?.email || "",
+                  };
+                }
+                return null;
+              })
+            ).then((profiles) => profiles.filter((profile) => profile !== null))
+          : Promise.resolve([]),
+      ]);
+
+      const userProfile = {
+        userId,
+        ...userProfileData,
+      };
+
+      const watchlist = watchlistDoc.exists
+        ? watchlistDoc.data()?.watchlistMovies || []
+        : [];
+
+      const reviews = reviewsSnapshot.empty
+        ? []
+        : reviewsSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+      const userData = {
+        profile: userProfile,
+        watchlist,
+        reviews,
+        followers: {
+          profiles: followerProfiles,
+          count: followers.length,
+        },
+        following: {
+          profiles: followingProfiles,
+          count: following.length,
+        },
+        stats: {
+          totalWatchlistItems: watchlist.length,
+          totalReviews: reviews.length,
+          followersCount: followers.length,
+          followingCount: following.length,
+        },
+      };
+
+      res.status(200).json({
+        success: true,
+        data: userData,
+      });
+    } catch (error: any) {
+      console.error("Error getting user profile:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          status: 500,
+          success: false,
+          message: "Something went wrong while getting profile",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
 const getUserInfo = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -1331,7 +1201,344 @@ const getUserInfo = asyncHandler(
     }
   }
 );
+
+const UnfollowUser = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { targetUserId } = req.body;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!targetUserId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'targetUserId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      // Check if user is actually following the target user
+      const userDoc = await db.collection("user_profiles").doc(userId).get();
+      if (!userDoc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
+      }
+
+      const userData = userDoc.data();
+      const following = userData?.following || [];
+
+      if (!following.includes(targetUserId)) {
+        throw new ApiError(
+          400,
+          "You are not following this user",
+          "BAD_REQUEST"
+        );
+      }
+
+      const batch = db.batch();
+
+      // Remove targetUserId from current user's following array
+      const userRef = db.collection("user_profiles").doc(userId);
+      batch.update(userRef, {
+        following: admin.firestore.FieldValue.arrayRemove(targetUserId),
+        followingCount: admin.firestore.FieldValue.increment(-1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Remove userId from target user's followers array
+      const targetUserRef = db.collection("user_profiles").doc(targetUserId);
+      batch.update(targetUserRef, {
+        followers: admin.firestore.FieldValue.arrayRemove(userId),
+        followersCount: admin.firestore.FieldValue.increment(-1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      res.status(200).json({
+        success: true,
+        message: "User unfollowed successfully",
+        data: {
+          userId,
+          targetUserId,
+          unfollowedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error unfollowing user:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while unfollowing user",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const GetUserFollowers = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.params.userId || req.user?.uid;
+      const { limit = 20, offset = 0 } = req.query;
+
+      if (!userId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'userId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const doc = await db.collection("user_profiles").doc(userId).get();
+
+      if (!doc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
+      }
+
+      const userData = doc.data();
+      const followers = userData?.followers || [];
+
+      // Apply pagination to followers array
+      const startIndex = Number(offset);
+      const endIndex = startIndex + Number(limit);
+      const paginatedFollowers = followers.slice(startIndex, endIndex);
+
+      const followerProfiles = [];
+      if (paginatedFollowers.length > 0) {
+        const followerDocs = await Promise.all(
+          paginatedFollowers.map((followerId: string) =>
+            db.collection("user_profiles").doc(followerId).get()
+          )
+        );
+
+        for (const followerDoc of followerDocs) {
+          if (followerDoc.exists) {
+            const data = followerDoc.data();
+            followerProfiles.push({
+              uid: followerDoc.id,
+              displayName: data?.displayName || "Unknown User",
+              photoURL: data?.photoURL || "",
+              email: data?.email || "",
+              bio: data?.bio || undefined,
+            });
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Followers retrieved successfully",
+        data: {
+          followers: followerProfiles,
+          followersCount: followers.length,
+          currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
+          totalPages: Math.ceil(followers.length / Number(limit)),
+          hasMore: endIndex < followers.length,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error getting followers:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while getting followers",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const GetUserFollowing = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.params.userId || req.user?.uid;
+      const { limit = 20, offset = 0 } = req.query;
+
+      if (!userId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'userId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const doc = await db.collection("user_profiles").doc(userId).get();
+
+      if (!doc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
+      }
+
+      const userData = doc.data();
+      const following = userData?.following || [];
+
+      // Apply pagination to following array
+      const startIndex = Number(offset);
+      const endIndex = startIndex + Number(limit);
+      const paginatedFollowing = following.slice(startIndex, endIndex);
+
+      const followingProfiles = [];
+      if (paginatedFollowing.length > 0) {
+        const followingDocs = await Promise.all(
+          paginatedFollowing.map((followingId: string) =>
+            db.collection("user_profiles").doc(followingId).get()
+          )
+        );
+
+        for (const followingDoc of followingDocs) {
+          if (followingDoc.exists) {
+            const data = followingDoc.data();
+            followingProfiles.push({
+              uid: followingDoc.id,
+              displayName: data?.displayName || "Unknown User",
+              photoURL: data?.photoURL || "",
+              email: data?.email || "",
+              bio: data?.bio || undefined,
+            });
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Following retrieved successfully",
+        data: {
+          following: followingProfiles,
+          followingCount: following.length,
+          currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
+          totalPages: Math.ceil(following.length / Number(limit)),
+          hasMore: endIndex < following.length,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error getting following:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while getting following",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
+const IsFollowing = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { targetUserId } = req.params;
+      const userId = req.user?.uid;
+
+      if (!userId) {
+        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      }
+
+      if (!targetUserId) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'targetUserId'",
+          "BAD_REQUEST"
+        );
+      }
+
+      if (userId === targetUserId) {
+        return res.status(200).json({
+          success: true,
+          message: "Cannot follow yourself",
+          data: {
+            isFollowing: false,
+            isSelf: true,
+            userId,
+            targetUserId,
+          },
+        });
+      }
+
+      const userDoc = await db.collection("user_profiles").doc(userId).get();
+
+      if (!userDoc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
+      }
+
+      const targetUserDoc = await db
+        .collection("user_profiles")
+        .doc(targetUserId)
+        .get();
+      if (!targetUserDoc.exists) {
+        throw new ApiError(404, "Target user not found", "NOT_FOUND");
+      }
+
+      const userData = userDoc.data();
+      const following = userData?.following || [];
+
+      const isFollowing = following.includes(targetUserId);
+
+      res.status(200).json({
+        success: true,
+        message: `Following status retrieved successfully`,
+        data: {
+          isFollowing,
+          isSelf: false,
+          userId,
+          targetUserId,
+          checkedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error checking follow status:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while checking follow status",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
+
 export {
+  IsFollowing,
   getUserInfo,
   LikeMovie,
   UnlikeMovie,

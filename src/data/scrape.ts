@@ -27,6 +27,7 @@ export default class Scraper {
         videos,
         images,
         videoSources,
+        poster, // Add poster scraping
       ] = await Promise.all([
         this.scrapeBasicInfo().catch(() => null),
         this.scrapeStoryline().catch(() => null),
@@ -34,7 +35,8 @@ export default class Scraper {
         this.scrapeCast().catch(() => null),
         this.scrapeVideos().catch(() => null),
         this.scrapeImages().catch(() => null),
-        this.scrapeVideoSources().catch(() => null), // New method
+        this.scrapeVideoSources().catch(() => null),
+        this.scrapePoster().catch(() => null), // New method
       ]);
 
       const movieData = {
@@ -46,7 +48,8 @@ export default class Scraper {
         cast,
         videos,
         images,
-        videoSources, // Add video sources to the data
+        videoSources,
+        poster,
       };
       console.log(movieData);
       await this.close();
@@ -57,7 +60,136 @@ export default class Scraper {
     }
   }
 
-  // New method to scrape video sources from video tags
+  async scrapePoster() {
+    if (!this.page) throw new Error("Page not loaded. Call start first.");
+
+    try {
+      await this.page.waitForSelector('[data-testid="hero-media__poster"]', {
+        timeout: 5000,
+      });
+
+      const posterUrl = await this.page.evaluate(() => {
+        const posterSelectors = [
+          '[data-testid="hero-media__poster"] .ipc-image',
+          ".ipc-poster__poster-image .ipc-image",
+          ".sc-b234497d-7 .ipc-image",
+          ".ipc-media--poster-27x40 .ipc-image",
+          ".ipc-poster .ipc-image",
+        ];
+
+        let posterImg = null;
+        for (const selector of posterSelectors) {
+          posterImg = document.querySelector(selector) as HTMLImageElement;
+          if (posterImg && posterImg.src) break;
+        }
+
+        if (!posterImg) {
+          const allImages = document.querySelectorAll(
+            'img[alt*="poster" i], img[alt*="Poster"]'
+          );
+          if (allImages.length > 0) {
+            posterImg = allImages[0] as HTMLImageElement;
+          }
+        }
+
+        if (posterImg) {
+          const srcset = posterImg.getAttribute("srcset");
+
+          console.log("Full srcset:", srcset); // Debug log
+          console.log("Original src:", posterImg.src); // Debug log
+
+          if (srcset) {
+            const srcsetEntries = srcset.split(",").map((entry) => {
+              const parts = entry.trim().split(" ");
+
+              console.log("partspartspartsparts", parts);
+              //@ts-ignore
+              const url = parts[0].trim();
+              const descriptor = parts[1] ? parts[1].trim() : "";
+              const width = descriptor
+                ? parseInt(descriptor.replace("w", ""))
+                : 0;
+
+              console.log("Parsed entry:", { url, width, descriptor }); // Debug log
+              return { url, width };
+            });
+
+            // Sort by width descending and get the highest quality
+            const highestQuality = srcsetEntries.sort(
+              (a, b) => b.width - a.width
+            )[0];
+
+            console.log("Highest quality entry:", highestQuality); // Debug log
+
+            if (
+              highestQuality &&
+              highestQuality.width > 0 &&
+              highestQuality.url &&
+              highestQuality.url.startsWith("http")
+            ) {
+              return highestQuality.url;
+            }
+          }
+
+          // Fallback to src attribute - but check if it's a full URL
+          const srcUrl = posterImg.getAttribute("src") || "";
+          if (srcUrl && srcUrl.startsWith("http")) {
+            return srcUrl;
+          }
+
+          // If src is also partial, try to get the original high-res URL
+          if (posterImg.src && posterImg.src.startsWith("http")) {
+            return posterImg.src;
+          }
+        }
+
+        return null;
+      });
+
+      if (posterUrl) {
+        console.log("High-Quality Poster URL:", posterUrl);
+        return posterUrl;
+      } else {
+        console.log("No poster found");
+        return null;
+      }
+    } catch (error) {
+      console.log("Poster not found or failed to load:", error);
+
+      // Enhanced fallback: try alternative methods
+      try {
+        const fallbackPoster = await this.page.evaluate(() => {
+          // Try multiple fallback strategies
+          const fallbackSelectors = [
+            'img[src*="amazon.com"][src*="MV5B"]', // Amazon CDN images
+            'img[alt*="poster" i]',
+            '.ipc-image[src*="amazon.com"]',
+            '[data-testid*="poster"] img',
+          ];
+
+          for (const selector of fallbackSelectors) {
+            const img = document.querySelector(selector) as HTMLImageElement;
+            if (
+              img &&
+              img.src &&
+              img.src.startsWith("http") &&
+              !img.src.endsWith(".jpg")
+            ) {
+              return img.src;
+            }
+          }
+
+          return null;
+        });
+
+        return fallbackPoster;
+      } catch (fallbackError) {
+        console.log("Fallback poster scraping also failed:", fallbackError);
+        return null;
+      }
+    }
+  }
+
   async scrapeVideoSources() {
     if (!this.page) throw new Error("Page not loaded. Call start first.");
 
@@ -511,7 +643,7 @@ export default class Scraper {
           ),
           keywords: Array.from(keywordElements)
             .map((el) => el.textContent?.trim() || "")
-            .filter((keyword) => keyword && !keyword.includes("more")), // Filter out "481 more" type entries
+            .filter((keyword) => keyword && !keyword.includes("more")),
           certificate: certificateElement?.textContent?.trim() || "",
           hasParentGuide: !!parentGuideElement,
         };

@@ -234,7 +234,7 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     movieData.Rated = Rated;
 
     await storeMovieDataInFirebase(imdbIdParam, movieData);
-    console.log(movieData);
+    console.log("movieData", movieData);
     res.status(200).json({
       success: true,
       imdb_id: imdbIdParam,
@@ -262,6 +262,8 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
 const saveCommentToMovie = async (
   imdbId: string,
   commentData: {
+    movieTitle: string;
+    poster: string;
     imdb_id: string;
     userId: string;
     userDisplayName: string;
@@ -277,6 +279,8 @@ const saveCommentToMovie = async (
 
     const movieComment = {
       id: commentId,
+      movieTitle: commentData.movieTitle,
+      poster: commentData.poster,
       userId: commentData.userId,
       userDisplayName: commentData.userDisplayName,
       userPhotoURL: commentData.userPhotoURL,

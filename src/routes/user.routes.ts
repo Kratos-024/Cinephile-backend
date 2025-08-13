@@ -17,6 +17,8 @@ import {
   AddToWatchlist,
   RemoveFromWatchlist,
   getUserInfo,
+  GetUserWatchlist,
+  IsFollowing,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
@@ -44,6 +46,9 @@ userRouter.route("/LikeMovie").post(LikeMovie);
 userRouter.route("/UnlikeMovie").post(UnlikeMovie);
 userRouter.route("/AddToWatchlist").post(AddToWatchlist);
 userRouter.route("/RemoveFromWatchlist").post(RemoveFromWatchlist);
+userRouter.route("/GetUserWatchlist").get(GetUserWatchlist);
+userRouter.route("/isfollowing/:targetUserId").get(IsFollowing);
+
 userRouter.route("/getUserInfo").post(getUserInfo);
 
 export default userRouter;
