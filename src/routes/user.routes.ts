@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-  SaveUserPreference,
   GetUserPreference,
   UpdateUserPreference,
   SaveUserReview,
@@ -19,13 +18,14 @@ import {
   getUserInfo,
   GetUserWatchlist,
   IsFollowing,
+  processUserPreferences,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
 
 userRouter.use(authenticateUser);
-userRouter.route("/preferences").post(SaveUserPreference);
+userRouter.route("/preferences").post(processUserPreferences);
 userRouter.route("/preferences").get(GetUserPreference);
 userRouter.route("/preferences").put(UpdateUserPreference);
 userRouter.route("/preferences/:userId").get(GetUserPreference);
@@ -36,7 +36,7 @@ userRouter.route("/reviews/:imdbId").delete(DeleteUserReview);
 userRouter.route("/follow").post(FollowUser);
 userRouter.route("/unfollow").post(UnfollowUser);
 userRouter.route("/followers/:userId").get(GetUserFollowers);
-userRouter.route("/following/:userId").get(GetUserFollowing);
+// userRouter.route("/following/:userId").get(GetUserFollowing);
 userRouter.route("/followers").get(GetUserFollowers);
 userRouter.route("/following").get(GetUserFollowing);
 userRouter.route("/profile").get(GetUserProfile);

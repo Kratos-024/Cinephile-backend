@@ -7,7 +7,7 @@ import {
   deleteCommentFromMovie,
   saveCommentToMovie,
 } from "./tmdb.controller.js";
-import { GetMovieByTitle } from "./omdb.controller.js";
+import { GetMovieByTitleFunction } from "./omdb.controller.js";
 
 interface SelectedMovie {
   imdbID: string;
@@ -34,19 +34,6 @@ interface UserReview {
   comment: string;
   rating?: number;
   timestamp: string;
-  updatedAt: any;
-}
-
-interface UserProfile {
-  uid: string;
-  email: string;
-  displayName?: string | null;
-  photoURL?: string | null;
-  followers: string[];
-  following: string[];
-  followersCount: number;
-  followingCount: number;
-  createdAt: any;
   updatedAt: any;
 }
 
@@ -120,130 +107,134 @@ const getRecommendationsFromML = async (title: string) => {
 const processUserPreferences = asyncHandler(
   async (req: Request, res: Response) => {
     try {
-      const { preferences } = req.body;
+      const preferences = req.body.preferences;
+      //@ts-ignore
       const userId = req.user?.uid;
 
-      await SaveUserPreference(res, userId, preferences);
-
+      await SaveUserPreference(userId, preferences);
       const allRecommendations = [];
       for (const movie of preferences) {
         const recommendations = await getRecommendationsFromML(movie.title);
         allRecommendations.push(...recommendations);
       }
+      const detailedMovies = [];
+      for (const movie of allRecommendations) {
+        const detailMovie = await GetMovieByTitleFunction(userId, movie);
+        detailedMovies.push(detailMovie);
+        console.log("camed here1");
+      }
+      // await saveRecommendationsTocollection(userId, detailedMovies);
+      console.log("camed here2");
 
-      const detailedMovies = await getDetailedMovieData([
-        ...new Set(allRecommendations),
-      ]);
-
-      await saveRecommendationsTocollection(userId, detailedMovies);
-
-      res.json({
+      res.send({
         success: true,
         message: "Preferences processed successfully",
         recommendationsCount: detailedMovies.length,
       });
     } catch (error) {
       //@ts-ignore
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: true, error: error.message });
     }
   }
 );
-const saveRecommendationsTocollection = async (
-  userId: string,
-  detailedMovies: any[]
-) => {
-  try {
-    console.log("Saving recommendations to collection...");
 
-    if (!userId) {
-      throw new Error("User ID is required");
-    }
+// const saveRecommendationsTocollection = async (
+//   userId: string,
+//   detailedMovies: any[]
+// ) => {
+//   try {
+//     console.log("Saving recommendations to collection...");
 
-    if (!detailedMovies || detailedMovies.length === 0) {
-      throw new Error("No recommendations to save");
-    }
+//     if (!userId) {
+//       throw new Error("User ID is required");
+//     }
 
-    const recommendationData = {
-      userId,
-      recommendations: detailedMovies,
-      generatedAt: new Date().toISOString(),
-      totalCount: detailedMovies.length,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: "active",
-      metadata: {
-        source: "ml_recommendation",
-        version: "1.0",
-        algorithm: "collaborative_filtering",
-      },
-    };
+//     if (!detailedMovies || detailedMovies.length === 0) {
+//       throw new Error("No recommendations to save");
+//     }
 
-    await db
-      .collection("user_recommendations")
-      .doc(userId)
-      .set(recommendationData, { merge: true });
+//     const recommendationData = {
+//       userId,
+//       recommendations: detailedMovies,
+//       generatedAt: new Date().toISOString(),
+//       totalCount: detailedMovies.length,
+//       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+//       status: "active",
+//       metadata: {
+//         source: "ml_recommendation",
+//         version: "1.0",
+//         algorithm: "collaborative_filtering",
+//       },
+//     };
 
-    console.log(
-      `Saved ${detailedMovies.length} recommendations for user: ${userId}`
-    );
+//     await db
+//       .collection("user_recommendations")
+//       .doc(userId)
+//       .set(recommendationData, { merge: true });
 
-    return {
-      success: true,
-      message: "Recommendations saved successfully",
-      data: {
-        userId,
-        totalRecommendations: detailedMovies.length,
-        generatedAt: recommendationData.generatedAt,
-      },
-    };
-  } catch (error: any) {
-    console.error("Error saving recommendations to collection:", error);
-    throw error;
-  }
-};
+//     console.log(
+//       `Saved ${detailedMovies.length} recommendations for user: ${userId}`
+//     );
 
-const getDetailedMovieData = async (movieTitles: string[]) => {
-  const detailedMovies = [];
+//     return {
+//       success: true,
+//       message: "Recommendations saved successfully",
+//       data: {
+//         userId,
+//         totalRecommendations: detailedMovies.length,
+//         generatedAt: recommendationData.generatedAt,
+//       },
+//     };
+//   } catch (error: any) {
+//     console.error("Error saving recommendations to collection:", error);
+//     throw error;
+//   }
+// };
 
-  for (const title of movieTitles) {
-    try {
-      console.log(`Getting detailed data for: ${title}`);
+// const getDetailedMovieData = async (movieTitles: string[]) => {
+//   const detailedMovies = [];
 
-      const searchResponse = (await GetMovieByTitle(title, 1)) as {
-        success: boolean;
-        data: any;
-        source: string;
-        error?: string;
-      };
+//   for (const title of movieTitles) {
+//     try {
+//       console.log(`Getting detailed data for: ${title}`);
 
-      if (
-        searchResponse &&
-        typeof searchResponse === "object" &&
-        "success" in searchResponse &&
-        searchResponse.success &&
-        searchResponse.data?.Response === "True" &&
-        searchResponse.data?.Search?.length > 0
-      ) {
-        const movieSearchResult = searchResponse.data.Search[0];
+//       const searchResponse = (await GetMovieByTitle(title, 1)) as {
+//         success: boolean;
+//         data: any;
+//         source: string;
+//         error?: string;
+//       };
 
-        const movieDetails = {
-          imdbID: movieSearchResult.imdbID,
-          title: movieSearchResult.Title,
-          poster: movieSearchResult.Poster,
-          year: movieSearchResult.Year,
-          type: movieSearchResult.Type,
-          timestamp: new Date().toISOString(),
-        };
+//       if (
+//         searchResponse &&
+//         typeof searchResponse === "object" &&
+//         "success" in searchResponse &&
+//         searchResponse.success &&
+//         searchResponse.data?.Response === "True" &&
+//         searchResponse.data?.Search?.length > 0
+//       ) {
+//         const movieSearchResult = searchResponse.data.Search[0];
 
-        detailedMovies.push(movieDetails);
-        console.log(`Got data for: ${title}`);
-      }
-    } catch (error) {
-      console.error(`Error getting detailed data for ${title}:`, error);
-    }
-  }
+//         const movieDetails = {
+//           imdbID: movieSearchResult.imdbID,
+//           title: movieSearchResult.Title,
+//           poster: movieSearchResult.Poster,
+//           year: movieSearchResult.Year,
+//           type: movieSearchResult.Type,
+//           timestamp: new Date().toISOString(),
+//         };
 
-  return detailedMovies;
-};
+//         detailedMovies.push(movieDetails);
+//         console.log(`Got data for: ${title}`);
+//       }
+//     } catch (error) {
+//       console.error(`Error getting detailed data for ${title}:`, error);
+//     }
+//   }
+
+//   return detailedMovies;
+// };
+
 const GetUserProfile = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -384,7 +375,6 @@ const GetUserProfile = asyncHandler(
 );
 
 const SaveUserPreference = async (
-  res: Response,
   userId: string,
   preferences: { title: string; imdbID: string }[]
 ) => {
@@ -405,7 +395,7 @@ const SaveUserPreference = async (
       if (!pref.imdbID || !pref.title) {
         throw new ApiError(
           400,
-          "Each preference must have 'imdbID' and 'title'", // Fixed error message
+          "Each preference must have 'imdbID' and 'title'",
           "BAD_REQUEST"
         );
       }
@@ -419,14 +409,13 @@ const SaveUserPreference = async (
       totalPreferences: preferences.length,
     };
 
-    const docRef = db.collection("user_preferences").doc(userId); // Fixed collection name
+    const docRef = db.collection("user_preferences").doc(userId);
     await docRef.set(userPreferenceData, { merge: true });
 
     console.log(
       `Saved preferences for user: ${userId}, total: ${preferences.length}`
     );
-
-    res.status(200).json({
+    return {
       success: true,
       message: "User preferences saved successfully",
       data: {
@@ -434,24 +423,24 @@ const SaveUserPreference = async (
         totalPreferences: preferences.length,
         savedAt: new Date().toISOString(),
       },
-    });
+    };
   } catch (error: any) {
     console.error("Error saving user preferences:", error);
 
     if (error instanceof ApiError) {
-      res.status(error.statusCode).json({
+      return {
         success: false,
         status: error.statusCode,
         message: error.message,
         type: error.type,
-      });
+      };
     } else {
-      res.status(500).json({
+      return {
         success: false,
         status: 500,
         message: "Something went wrong while saving preferences",
         type: "INTERNAL_ERROR",
-      });
+      };
     }
   }
 };
@@ -1706,4 +1695,5 @@ export {
   GetUserFollowers,
   GetUserFollowing,
   GetUserProfile,
+  processUserPreferences,
 };

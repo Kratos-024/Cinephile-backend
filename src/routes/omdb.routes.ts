@@ -1,18 +1,22 @@
 import { Router } from "express";
 import {
-  GetMovieByTitle,
   GetMovieById,
   StoreMovieInFirebase,
   GetCachedMovies,
   ClearMovieCache,
+  GetMovieByTitleResponse,
+  GetMoviesByTitleResponse,
 } from "../controllers/omdb.controller.js";
+import { authenticateUser } from "../middlewares/auth.middleware.js";
 
 const omdbRouter = Router();
 
-omdbRouter.route("/getMovieByTitle").get(GetMovieByTitle);
+omdbRouter.route("/getMovieByTitle/:title").get(GetMovieByTitleResponse);
+omdbRouter.route("/getMovieByTitles/:title").get(GetMoviesByTitleResponse);
+
 omdbRouter.route("/getMovie").post(GetMovieById);
 omdbRouter.route("/storeMovie").post(StoreMovieInFirebase);
-omdbRouter.route("/cachedMovies").get(GetCachedMovies);
+omdbRouter.route("/cachedMovies").get(authenticateUser, GetCachedMovies);
 omdbRouter.route("/clearCache/:title/:page").delete(ClearMovieCache);
 omdbRouter.route("/clearCache/:title").delete(ClearMovieCache);
 

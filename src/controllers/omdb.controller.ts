@@ -62,147 +62,201 @@ export const isOMDbError = (
   return data.Response === "False";
 };
 
-const GetMovieByTitle = async (
-  titleParam: string | Request,
-  page: number = 1,
-  res?: Response
-) => {
-  try {
-    let title: string;
+const GetMovieByTitleFunction = async (userId: string, title: string) => {
+  if (!title) {
+    throw new ApiError(
+      400,
+      "Missing required parameter 'title'",
+      "BAD_REQUEST"
+    );
+  }
 
-    if (typeof titleParam === "string") {
-      title = titleParam;
-    } else {
-      const req = titleParam;
-      title = String(req.query.title);
-      page = Number(req.query.page) || 1;
-    }
+  if (!userId) {
+    throw new ApiError(
+      400,
+      "Missing required parameter 'userId'",
+      "BAD_REQUEST"
+    );
+  }
 
-    if (!title) {
-      const error = new ApiError(
-        400,
-        "Missing required parameter 'title'",
-        "BAD_REQUEST"
-      );
-      if (res) {
-        return res
-          .status(400)
-          .send({ status: 400, message: error.message, type: error.type });
-      } else {
-        throw error;
-      }
-    }
+  const searchTitle = title.toLowerCase().trim();
 
-    const searchTitle = title.toLowerCase().trim();
-    const searchPage = page;
+  const firebaseDoc = await db
+    .collection("user_movie_model")
+    .doc(searchTitle)
+    .get();
 
-    const firebaseDoc = await db
-      .collection("movies_cache")
-      .doc(`${searchTitle}_page_${searchPage}`)
-      .get();
+  let movieData;
+  let source = "api";
 
-    if (firebaseDoc.exists) {
-      const cachedData = firebaseDoc.data();
-      console.log("Retrieved from Firebase cache:", searchTitle);
-
-      const result = {
-        success: true,
-        data: cachedData,
-        source: "cache",
-      };
-
-      if (res) {
-        return res.status(200).json(result);
-      } else {
-        return result;
-      }
-    }
-
+  if (firebaseDoc.exists) {
+    const cachedData = firebaseDoc.data();
+    movieData = cachedData?.movie || cachedData;
+    source = "cache";
+    console.log("Retrieved from Firebase cache:", searchTitle);
+  } else {
     const apiKey = process.env.OMDB_API_KEY;
-
     if (!apiKey) {
-      const error = new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
-      if (res) {
-        return res
-          .status(500)
-          .send({ status: 500, message: error.message, type: error.type });
-      } else {
-        throw error;
-      }
+      throw new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
     }
 
-    const url = `https://www.omdbapi.com/?s=${encodeURIComponent(
+    const url = `https://www.omdbapi.com/?t=${encodeURIComponent(
       title
-    )}&page=${searchPage}&type=movie&apikey=${apiKey}`;
-
+    )}&apikey=${apiKey}`;
     const response = await fetch(url);
     const data = (await response.json()) as OMDbResponse;
 
     if (isOMDbError(data)) {
-      const error = new ApiError(404, data.Error, "NOT_FOUND");
-      if (res) {
-        return res
-          .status(404)
-          .send({ status: 404, message: error.message, type: error.type });
-      } else {
-        throw error;
-      }
+      throw new ApiError(404, data.Error, "NOT_FOUND");
     }
 
+    movieData = data;
+
+    // Store in global cache
+    const dataToStore = {
+      movie: data,
+      cached_at: admin.firestore.FieldValue.serverTimestamp(),
+      search_title: searchTitle,
+    };
+
     try {
-      const dataToStore = {
-        Search: data.Search,
-        totalResults: data.totalResults,
-        Response: data.Response,
-        cached_at: admin.firestore.FieldValue.serverTimestamp(),
-        search_title: searchTitle,
-        search_page: searchPage,
-      };
-
-      await db
-        .collection("movies_cache")
-        .doc(`${searchTitle}_page_${searchPage}`)
-        .set(dataToStore);
-
+      await db.collection("user_movie_model").doc(searchTitle).set(dataToStore);
       console.log("Stored in Firebase cache:", searchTitle);
     } catch (firebaseError) {
       console.error("Error storing in Firebase:", firebaseError);
     }
+  }
 
-    const result = {
-      success: true,
-      data,
-      source: "api",
+  try {
+    const userMovieData = {
+      ...movieData,
+      added_at: admin.firestore.FieldValue.serverTimestamp(),
+      user_id: userId,
+      movie_id: movieData.imdbID || searchTitle,
     };
 
-    if (res) {
-      return res.status(200).json(result);
-    } else {
-      return result;
-    }
-  } catch (error: any) {
-    console.error("Error caught:", error);
+    await db
+      .collection("users")
+      .doc(userId)
+      .collection("movies")
+      .doc(movieData.imdbID || searchTitle)
+      .set(userMovieData, { merge: true });
 
-    if (res) {
+    console.log(`Movie added to user ${userId}'s collection:`, searchTitle);
+  } catch (userMovieError) {
+    console.error("Error adding movie to user collection:", userMovieError);
+    // Don't throw here, still return the movie data
+  }
+
+  return {
+    success: true,
+    data: movieData,
+    source,
+    added_to_user: userId,
+  };
+};
+
+const GetMovieByTitleResponse = asyncHandler(
+  async (req: Request, res: Response) => {
+    try {
+      const title = req.params.title;
+
+      if (!title) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'title'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const apiKey = process.env.OMDB_API_KEY;
+
+      if (!apiKey) {
+        throw new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
+      }
+
+      const url = `https://www.omdbapi.com/?t=${encodeURIComponent(
+        title
+      )}&apikey=${apiKey}`;
+
+      const response = await fetch(url);
+      const data = (await response.json()) as OMDbDetailResponse;
+
+      if (isOMDbError(data)) {
+        throw new ApiError(404, data.Error, "NOT_FOUND");
+      }
+
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      console.error("Error caught:", error);
+
       if (error instanceof ApiError) {
-        return res.status(error.statusCode).send({
+        res.status(error.statusCode).send({
           status: error.statusCode,
           message: error.message,
           type: error.type,
         });
       } else {
-        return res.status(500).send({
+        res.status(500).send({
           status: 500,
           message: "Something went wrong",
           type: "INTERNAL_ERROR",
         });
       }
-    } else {
-      return { success: false, error: error.message };
     }
   }
-};
+);
+const GetMoviesByTitleResponse = asyncHandler(
+  async (req: Request, res: Response) => {
+    try {
+      const title = req.params.title;
 
+      if (!title) {
+        throw new ApiError(
+          400,
+          "Missing required parameter 'title'",
+          "BAD_REQUEST"
+        );
+      }
+
+      const apiKey = process.env.OMDB_API_KEY;
+
+      if (!apiKey) {
+        throw new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
+      }
+
+      const url = `https://www.omdbapi.com/?s=${encodeURIComponent(
+        title
+      )}&apikey=${apiKey}`;
+
+      const response = await fetch(url);
+      console.log(response);
+      const data = (await response.json()) as OMDbDetailResponse;
+
+      if (isOMDbError(data)) {
+        throw new ApiError(404, data.Error, "NOT_FOUND");
+      }
+
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      console.error("Error caught:", error);
+
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).send({
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).send({
+          status: 500,
+          message: "Something went wrong",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
 const GetMovieById = asyncHandler(async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
@@ -303,13 +357,27 @@ const StoreMovieInFirebase = asyncHandler(
 
 const GetCachedMovies = asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { limit = 10, offset = 0 } = req.query;
+    //@ts-ignore
+    const userId = req.user?.uid;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "User not authenticated",
+        errorType: "UNAUTHORIZED",
+      });
+    }
+
+    const { limit = 10, page = 0 } = req.query;
+    const offset = Number(page) * Number(limit);
 
     const snapshot = await db
-      .collection("movies_cache")
-      .orderBy("cached_at", "desc")
+      .collection("users")
+      .doc(userId)
+      .collection("movies")
+      .orderBy("added_at", "desc")
       .limit(Number(limit))
-      .offset(Number(offset))
+      .offset(offset)
       .get();
 
     const cachedMovies = snapshot.docs.map((doc) => ({
@@ -317,18 +385,21 @@ const GetCachedMovies = asyncHandler(async (req: Request, res: Response) => {
       ...doc.data(),
     }));
 
+    console.log(`Retrieved ${cachedMovies.length} movies for user ${userId}`);
+
     res.status(200).json({
       success: true,
       data: cachedMovies,
       total: cachedMovies.length,
+      page: Number(page),
+      userId: userId,
     });
   } catch (error: any) {
     console.error("Error getting cached movies:", error);
-
-    res.status(500).send({
-      status: 500,
-      message: "Failed to retrieve cached movies",
-      type: "INTERNAL_ERROR",
+    res.status(500).json({
+      success: false,
+      error: "Failed to retrieve cached movies",
+      errorType: "INTERNAL_ERROR",
     });
   }
 });
@@ -372,9 +443,11 @@ const ClearMovieCache = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export {
-  GetMovieByTitle,
+  GetMovieByTitleFunction,
+  GetMovieByTitleResponse,
   GetMovieById,
   StoreMovieInFirebase,
   GetCachedMovies,
   ClearMovieCache,
+  GetMoviesByTitleResponse,
 };
