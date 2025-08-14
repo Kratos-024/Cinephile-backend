@@ -62,20 +62,39 @@ export const isOMDbError = (
   return data.Response === "False";
 };
 
-const GetMovieByTitle = asyncHandler(async (req: Request, res: Response) => {
+const GetMovieByTitle = async (
+  titleParam: string | Request,
+  page: number = 1,
+  res?: Response
+) => {
   try {
-    const { title, page } = req.query;
+    let title: string;
+
+    if (typeof titleParam === "string") {
+      title = titleParam;
+    } else {
+      const req = titleParam;
+      title = String(req.query.title);
+      page = Number(req.query.page) || 1;
+    }
 
     if (!title) {
-      throw new ApiError(
+      const error = new ApiError(
         400,
         "Missing required parameter 'title'",
         "BAD_REQUEST"
       );
+      if (res) {
+        return res
+          .status(400)
+          .send({ status: 400, message: error.message, type: error.type });
+      } else {
+        throw error;
+      }
     }
 
-    const searchTitle = String(title).toLowerCase().trim();
-    const searchPage = page ?? 1;
+    const searchTitle = title.toLowerCase().trim();
+    const searchPage = page;
 
     const firebaseDoc = await db
       .collection("movies_cache")
@@ -86,28 +105,50 @@ const GetMovieByTitle = asyncHandler(async (req: Request, res: Response) => {
       const cachedData = firebaseDoc.data();
       console.log("Retrieved from Firebase cache:", searchTitle);
 
-      return res.status(200).json({
+      const result = {
         success: true,
         data: cachedData,
         source: "cache",
-      });
+      };
+
+      if (res) {
+        return res.status(200).json(result);
+      } else {
+        return result;
+      }
     }
+
     const apiKey = process.env.OMDB_API_KEY;
 
     if (!apiKey) {
-      throw new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
+      const error = new ApiError(500, "Missing OMDb API key", "INTERNAL_ERROR");
+      if (res) {
+        return res
+          .status(500)
+          .send({ status: 500, message: error.message, type: error.type });
+      } else {
+        throw error;
+      }
     }
 
     const url = `https://www.omdbapi.com/?s=${encodeURIComponent(
-      String(title)
+      title
     )}&page=${searchPage}&type=movie&apikey=${apiKey}`;
 
     const response = await fetch(url);
     const data = (await response.json()) as OMDbResponse;
 
     if (isOMDbError(data)) {
-      throw new ApiError(404, data.Error, "NOT_FOUND");
+      const error = new ApiError(404, data.Error, "NOT_FOUND");
+      if (res) {
+        return res
+          .status(404)
+          .send({ status: 404, message: error.message, type: error.type });
+      } else {
+        throw error;
+      }
     }
+
     try {
       const dataToStore = {
         Search: data.Search,
@@ -128,29 +169,39 @@ const GetMovieByTitle = asyncHandler(async (req: Request, res: Response) => {
       console.error("Error storing in Firebase:", firebaseError);
     }
 
-    res.status(200).json({
+    const result = {
       success: true,
       data,
       source: "api",
-    });
+    };
+
+    if (res) {
+      return res.status(200).json(result);
+    } else {
+      return result;
+    }
   } catch (error: any) {
     console.error("Error caught:", error);
 
-    if (error instanceof ApiError) {
-      res.status(error.statusCode).send({
-        status: error.statusCode,
-        message: error.message,
-        type: error.type,
-      });
+    if (res) {
+      if (error instanceof ApiError) {
+        return res.status(error.statusCode).send({
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        return res.status(500).send({
+          status: 500,
+          message: "Something went wrong",
+          type: "INTERNAL_ERROR",
+        });
+      }
     } else {
-      res.status(500).send({
-        status: 500,
-        message: "Something went wrong",
-        type: "INTERNAL_ERROR",
-      });
+      return { success: false, error: error.message };
     }
   }
-});
+};
 
 const GetMovieById = asyncHandler(async (req: Request, res: Response) => {
   try {

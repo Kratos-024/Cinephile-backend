@@ -7,14 +7,11 @@ import {
   deleteCommentFromMovie,
   saveCommentToMovie,
 } from "./tmdb.controller.js";
+import { GetMovieByTitle } from "./omdb.controller.js";
 
 interface SelectedMovie {
-  tmdbId: number;
-  imdbId?: string;
+  imdbID: string;
   title: string;
-  poster_path?: string;
-  release_date?: string;
-  vote_average?: number;
 }
 
 interface UserPreference {
@@ -92,62 +89,280 @@ interface UserWatchlist {
   totalWatchlist: number;
   updatedAt: any;
 }
+const getRecommendationsFromML = async (title: string) => {
+  try {
+    const response = await fetch("http://127.0.0.1:8080/recommend", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ movie_title: title }),
+    });
 
-const SaveUserPreference = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.recommendations && data.recommendations.recommended) {
+      return data.recommendations.recommended;
+    } else {
+      console.warn(`No recommendations found for: ${title}`);
+      return [];
+    }
+  } catch (error) {
+    console.error(`Error fetching recommendations for ${title}:`, error);
+    return [];
+  }
+};
+
+const processUserPreferences = asyncHandler(
+  async (req: Request, res: Response) => {
     try {
       const { preferences } = req.body;
       const userId = req.user?.uid;
 
-      if (!userId) {
-        throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+      await SaveUserPreference(res, userId, preferences);
+
+      const allRecommendations = [];
+      for (const movie of preferences) {
+        const recommendations = await getRecommendationsFromML(movie.title);
+        allRecommendations.push(...recommendations);
       }
 
-      if (!preferences || !Array.isArray(preferences)) {
+      const detailedMovies = await getDetailedMovieData([
+        ...new Set(allRecommendations),
+      ]);
+
+      await saveRecommendationsTocollection(userId, detailedMovies);
+
+      res.json({
+        success: true,
+        message: "Preferences processed successfully",
+        recommendationsCount: detailedMovies.length,
+      });
+    } catch (error) {
+      //@ts-ignore
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+const saveRecommendationsTocollection = async (
+  userId: string,
+  detailedMovies: any[]
+) => {
+  try {
+    console.log("Saving recommendations to collection...");
+
+    if (!userId) {
+      throw new Error("User ID is required");
+    }
+
+    if (!detailedMovies || detailedMovies.length === 0) {
+      throw new Error("No recommendations to save");
+    }
+
+    const recommendationData = {
+      userId,
+      recommendations: detailedMovies,
+      generatedAt: new Date().toISOString(),
+      totalCount: detailedMovies.length,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: "active",
+      metadata: {
+        source: "ml_recommendation",
+        version: "1.0",
+        algorithm: "collaborative_filtering",
+      },
+    };
+
+    await db
+      .collection("user_recommendations")
+      .doc(userId)
+      .set(recommendationData, { merge: true });
+
+    console.log(
+      `Saved ${detailedMovies.length} recommendations for user: ${userId}`
+    );
+
+    return {
+      success: true,
+      message: "Recommendations saved successfully",
+      data: {
+        userId,
+        totalRecommendations: detailedMovies.length,
+        generatedAt: recommendationData.generatedAt,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error saving recommendations to collection:", error);
+    throw error;
+  }
+};
+
+const getDetailedMovieData = async (movieTitles: string[]) => {
+  const detailedMovies = [];
+
+  for (const title of movieTitles) {
+    try {
+      console.log(`Getting detailed data for: ${title}`);
+
+      const searchResponse = (await GetMovieByTitle(title, 1)) as {
+        success: boolean;
+        data: any;
+        source: string;
+        error?: string;
+      };
+
+      if (
+        searchResponse &&
+        typeof searchResponse === "object" &&
+        "success" in searchResponse &&
+        searchResponse.success &&
+        searchResponse.data?.Response === "True" &&
+        searchResponse.data?.Search?.length > 0
+      ) {
+        const movieSearchResult = searchResponse.data.Search[0];
+
+        const movieDetails = {
+          imdbID: movieSearchResult.imdbID,
+          title: movieSearchResult.Title,
+          poster: movieSearchResult.Poster,
+          year: movieSearchResult.Year,
+          type: movieSearchResult.Type,
+          timestamp: new Date().toISOString(),
+        };
+
+        detailedMovies.push(movieDetails);
+        console.log(`Got data for: ${title}`);
+      }
+    } catch (error) {
+      console.error(`Error getting detailed data for ${title}:`, error);
+    }
+  }
+
+  return detailedMovies;
+};
+const GetUserProfile = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.params.userId || req.user?.uid;
+
+      if (!userId) {
         throw new ApiError(
           400,
-          "Missing or invalid 'preferences' parameter",
+          "Missing required parameter 'userId'",
           "BAD_REQUEST"
         );
       }
 
-      // Validate preferences structure
-      for (const pref of preferences) {
-        if (!pref.tmdbId || !pref.title) {
-          throw new ApiError(
-            400,
-            "Each preference must have 'tmdbId' and 'title'",
-            "BAD_REQUEST"
-          );
-        }
+      const [userProfileDoc, watchlistDoc, reviewsSnapshot] = await Promise.all(
+        [
+          db.collection("user_profiles").doc(userId).get(),
+          db.collection("user_watchlist").doc(userId).get(),
+          db
+            .collection("user_profiles")
+            .doc(userId)
+            .collection("reviews")
+            .orderBy("timestamp", "desc")
+            .get(),
+        ]
+      );
+
+      if (!userProfileDoc.exists) {
+        throw new ApiError(404, "User profile not found", "NOT_FOUND");
       }
 
-      const userPreferenceData: UserPreference = {
+      const userProfileData = userProfileDoc.data();
+      const followers = userProfileData?.followers || [];
+      const following = userProfileData?.following || [];
+
+      const [followerProfiles, followingProfiles] = await Promise.all([
+        followers.length > 0
+          ? Promise.all(
+              followers.map(async (followerId: string) => {
+                const followerDoc = await db
+                  .collection("user_profiles")
+                  .doc(followerId)
+                  .get();
+                if (followerDoc.exists) {
+                  const data = followerDoc.data();
+                  return {
+                    uid: followerId,
+                    displayName: data?.displayName || "",
+                    photoURL: data?.photoURL || "",
+                    email: data?.email || "",
+                  };
+                }
+                return null;
+              })
+            ).then((profiles) => profiles.filter((profile) => profile !== null))
+          : Promise.resolve([]),
+        following.length > 0
+          ? Promise.all(
+              following.map(async (followingId: string) => {
+                const followingDoc = await db
+                  .collection("user_profiles")
+                  .doc(followingId)
+                  .get();
+                if (followingDoc.exists) {
+                  const data = followingDoc.data();
+                  return {
+                    uid: followingId,
+                    displayName: data?.displayName || "",
+                    photoURL: data?.photoURL || "",
+                    email: data?.email || "",
+                  };
+                }
+                return null;
+              })
+            ).then((profiles) => profiles.filter((profile) => profile !== null))
+          : Promise.resolve([]),
+      ]);
+
+      const userProfile = {
         userId,
-        preferences,
-        timestamp: new Date().toISOString(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        totalPreferences: preferences.length,
+        ...userProfileData,
       };
 
-      const docRef = db.collection("user_preferences").doc(userId);
-      await docRef.set(userPreferenceData, { merge: true });
+      const watchlist = watchlistDoc.exists
+        ? watchlistDoc.data()?.watchlistMovies || []
+        : [];
 
-      console.log(
-        `Saved preferences for user: ${userId}, total: ${preferences.length}`
-      );
+      const reviews = reviewsSnapshot.empty
+        ? []
+        : reviewsSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+      const userData = {
+        profile: userProfile,
+        watchlist,
+        reviews,
+        followers: {
+          profiles: followerProfiles,
+          count: followers.length,
+        },
+        following: {
+          profiles: followingProfiles,
+          count: following.length,
+        },
+        stats: {
+          totalWatchlistItems: watchlist.length,
+          totalReviews: reviews.length,
+          followersCount: followers.length,
+          followingCount: following.length,
+        },
+      };
 
       res.status(200).json({
         success: true,
-        message: "User preferences saved successfully",
-        data: {
-          userId,
-          totalPreferences: preferences.length,
-          savedAt: new Date().toISOString(),
-        },
+        data: userData,
       });
     } catch (error: any) {
-      console.error("Error saving user preferences:", error);
+      console.error("Error getting user profile:", error);
 
       if (error instanceof ApiError) {
         res.status(error.statusCode).json({
@@ -158,15 +373,88 @@ const SaveUserPreference = asyncHandler(
         });
       } else {
         res.status(500).json({
-          success: false,
           status: 500,
-          message: "Something went wrong while saving preferences",
+          success: false,
+          message: "Something went wrong while getting profile",
           type: "INTERNAL_ERROR",
         });
       }
     }
   }
 );
+
+const SaveUserPreference = async (
+  res: Response,
+  userId: string,
+  preferences: { title: string; imdbID: string }[]
+) => {
+  try {
+    if (!userId) {
+      throw new ApiError(401, "User not authenticated", "UNAUTHORIZED");
+    }
+
+    if (!preferences || !Array.isArray(preferences)) {
+      throw new ApiError(
+        400,
+        "Missing or invalid 'preferences' parameter",
+        "BAD_REQUEST"
+      );
+    }
+
+    for (const pref of preferences) {
+      if (!pref.imdbID || !pref.title) {
+        throw new ApiError(
+          400,
+          "Each preference must have 'imdbID' and 'title'", // Fixed error message
+          "BAD_REQUEST"
+        );
+      }
+    }
+
+    const userPreferenceData: UserPreference = {
+      userId,
+      preferences,
+      timestamp: new Date().toISOString(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      totalPreferences: preferences.length,
+    };
+
+    const docRef = db.collection("user_preferences").doc(userId); // Fixed collection name
+    await docRef.set(userPreferenceData, { merge: true });
+
+    console.log(
+      `Saved preferences for user: ${userId}, total: ${preferences.length}`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "User preferences saved successfully",
+      data: {
+        userId,
+        totalPreferences: preferences.length,
+        savedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error saving user preferences:", error);
+
+    if (error instanceof ApiError) {
+      res.status(error.statusCode).json({
+        success: false,
+        status: error.statusCode,
+        message: error.message,
+        type: error.type,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        status: 500,
+        message: "Something went wrong while saving preferences",
+        type: "INTERNAL_ERROR",
+      });
+    }
+  }
+};
 
 const GetUserPreference = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
@@ -1041,145 +1329,6 @@ const GetUserWatchlist = asyncHandler(
           success: false,
           status: 500,
           message: "Something went wrong while retrieving watchlist",
-          type: "INTERNAL_ERROR",
-        });
-      }
-    }
-  }
-);
-
-const GetUserProfile = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.params.userId || req.user?.uid;
-
-      if (!userId) {
-        throw new ApiError(
-          400,
-          "Missing required parameter 'userId'",
-          "BAD_REQUEST"
-        );
-      }
-
-      const [userProfileDoc, watchlistDoc, reviewsSnapshot] = await Promise.all(
-        [
-          db.collection("user_profiles").doc(userId).get(),
-          db.collection("user_watchlist").doc(userId).get(),
-          db
-            .collection("user_profiles")
-            .doc(userId)
-            .collection("reviews")
-            .orderBy("timestamp", "desc")
-            .get(),
-        ]
-      );
-
-      if (!userProfileDoc.exists) {
-        throw new ApiError(404, "User profile not found", "NOT_FOUND");
-      }
-
-      const userProfileData = userProfileDoc.data();
-      const followers = userProfileData?.followers || [];
-      const following = userProfileData?.following || [];
-
-      const [followerProfiles, followingProfiles] = await Promise.all([
-        followers.length > 0
-          ? Promise.all(
-              followers.map(async (followerId: string) => {
-                const followerDoc = await db
-                  .collection("user_profiles")
-                  .doc(followerId)
-                  .get();
-                if (followerDoc.exists) {
-                  const data = followerDoc.data();
-                  return {
-                    uid: followerId,
-                    displayName: data?.displayName || "",
-                    photoURL: data?.photoURL || "",
-                    email: data?.email || "",
-                  };
-                }
-                return null;
-              })
-            ).then((profiles) => profiles.filter((profile) => profile !== null))
-          : Promise.resolve([]),
-        following.length > 0
-          ? Promise.all(
-              following.map(async (followingId: string) => {
-                const followingDoc = await db
-                  .collection("user_profiles")
-                  .doc(followingId)
-                  .get();
-                if (followingDoc.exists) {
-                  const data = followingDoc.data();
-                  return {
-                    uid: followingId,
-                    displayName: data?.displayName || "",
-                    photoURL: data?.photoURL || "",
-                    email: data?.email || "",
-                  };
-                }
-                return null;
-              })
-            ).then((profiles) => profiles.filter((profile) => profile !== null))
-          : Promise.resolve([]),
-      ]);
-
-      const userProfile = {
-        userId,
-        ...userProfileData,
-      };
-
-      const watchlist = watchlistDoc.exists
-        ? watchlistDoc.data()?.watchlistMovies || []
-        : [];
-
-      const reviews = reviewsSnapshot.empty
-        ? []
-        : reviewsSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-      const userData = {
-        profile: userProfile,
-        watchlist,
-        reviews,
-        followers: {
-          profiles: followerProfiles,
-          count: followers.length,
-        },
-        following: {
-          profiles: followingProfiles,
-          count: following.length,
-        },
-        stats: {
-          totalWatchlistItems: watchlist.length,
-          totalReviews: reviews.length,
-          followersCount: followers.length,
-          followingCount: following.length,
-        },
-      };
-
-      res.status(200).json({
-        success: true,
-        data: userData,
-      });
-    } catch (error: any) {
-      console.error("Error getting user profile:", error);
-
-      if (error instanceof ApiError) {
-        res.status(error.statusCode).json({
-          success: false,
-          status: error.statusCode,
-          message: error.message,
-          type: error.type,
-        });
-      } else {
-        res.status(500).json({
-          status: 500,
-          success: false,
-          message: "Something went wrong while getting profile",
           type: "INTERNAL_ERROR",
         });
       }
