@@ -92,9 +92,7 @@ export const getRecommendationsFromML = async (title: string) => {
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const data = await response.json();
-
     if (data.recommendations && data.recommendations.recommended) {
       return data.recommendations.recommended;
     } else {
