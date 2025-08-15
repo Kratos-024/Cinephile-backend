@@ -19,12 +19,15 @@ import {
   GetUserWatchlist,
   IsFollowing,
   processUserPreferences,
+  GetTop10Users,
 } from "../controllers/user.controller.js";
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
 
 userRouter.use(authenticateUser);
+userRouter.route("/GetTop10Users").get(GetTop10Users);
+
 userRouter.route("/preferences").post(processUserPreferences);
 userRouter.route("/preferences").get(GetUserPreference);
 userRouter.route("/preferences").put(UpdateUserPreference);

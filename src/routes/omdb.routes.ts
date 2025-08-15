@@ -12,7 +12,7 @@ import { authenticateUser } from "../middlewares/auth.middleware.js";
 const omdbRouter = Router();
 
 omdbRouter.route("/getMovieByTitle/:title").get(GetMovieByTitleResponse);
-omdbRouter.route("/getMovieByTitles/:title").get(GetMoviesByTitleResponse);
+omdbRouter.route("/getMoviesByTitle/:title").get(GetMoviesByTitleResponse);
 
 omdbRouter.route("/getMovie").post(GetMovieById);
 omdbRouter.route("/storeMovie").post(StoreMovieInFirebase);

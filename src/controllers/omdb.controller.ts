@@ -17,6 +17,31 @@ interface OMDbSearchResponse {
   Response: "True";
 }
 
+interface OMDbSearchMovie {
+  Title: string;
+  Year: string;
+  imdbID: string;
+  Type: string;
+  Poster: string;
+}
+
+// For search API response
+interface OMDbSearchResponse {
+  Search: OMDbSearchMovie[];
+  totalResults: string;
+  Response: "True";
+}
+
+// For error response
+interface OMDbErrorResponse {
+  Response: "False";
+  Error: string;
+}
+
+// Union type for search endpoint
+export type OMDbSearchApiResponse = OMDbSearchResponse | OMDbErrorResponse;
+
+// Keep your existing detail response for single movie endpoints
 interface OMDbMovieDetailResponse {
   Title: string;
   Year: string;
@@ -81,17 +106,17 @@ const GetMovieByTitleFunction = async (userId: string, title: string) => {
 
   const searchTitle = title.toLowerCase().trim();
 
+  // 1️⃣ – check Firebase cache first
   const firebaseDoc = await db
     .collection("user_movie_model")
     .doc(searchTitle)
     .get();
 
-  let movieData;
-  let source = "api";
+  let movieData: OMDbResponse | undefined;
+  let source: "cache" | "api" = "api";
 
   if (firebaseDoc.exists) {
-    const cachedData = firebaseDoc.data();
-    movieData = cachedData?.movie || cachedData;
+    movieData = firebaseDoc.data()?.movie;
     source = "cache";
     console.log("Retrieved from Firebase cache:", searchTitle);
   } else {
@@ -103,49 +128,55 @@ const GetMovieByTitleFunction = async (userId: string, title: string) => {
     const url = `https://www.omdbapi.com/?t=${encodeURIComponent(
       title
     )}&apikey=${apiKey}`;
+
     const response = await fetch(url);
     const data = (await response.json()) as OMDbResponse;
-
     if (isOMDbError(data)) {
-      throw new ApiError(404, data.Error, "NOT_FOUND");
+      console.log("OMDb returned NOT_FOUND for:", title);
+      return {
+        success: false,
+        message: data.Error || "Movie not found",
+        source: "api",
+        added_to_user: userId,
+        data: null,
+      };
     }
 
     movieData = data;
 
-    // Store in global cache
     const dataToStore = {
       movie: data,
       cached_at: admin.firestore.FieldValue.serverTimestamp(),
       search_title: searchTitle,
     };
-
-    try {
-      await db.collection("user_movie_model").doc(searchTitle).set(dataToStore);
-      console.log("Stored in Firebase cache:", searchTitle);
-    } catch (firebaseError) {
-      console.error("Error storing in Firebase:", firebaseError);
-    }
+    db.collection("user_movie_model")
+      .doc(searchTitle)
+      .set(dataToStore)
+      .catch((err) => console.error("Error storing in Firebase:", err));
   }
 
   try {
-    const userMovieData = {
-      ...movieData,
-      added_at: admin.firestore.FieldValue.serverTimestamp(),
-      user_id: userId,
-      movie_id: movieData.imdbID || searchTitle,
-    };
+    if (movieData) {
+      const userMovieData = {
+        ...movieData,
+        added_at: admin.firestore.FieldValue.serverTimestamp(),
+        user_id: userId,
+        //@ts-ignore
+        movie_id: movieData.imdbID || searchTitle,
+      };
 
-    await db
-      .collection("users")
-      .doc(userId)
-      .collection("movies")
-      .doc(movieData.imdbID || searchTitle)
-      .set(userMovieData, { merge: true });
+      await db
+        .collection("users")
+        .doc(userId)
+        .collection("movies")
+        //@ts-ignore
+        .doc(movieData.imdbID || searchTitle)
+        .set(userMovieData, { merge: true });
 
-    console.log(`Movie added to user ${userId}'s collection:`, searchTitle);
+      console.log(`Movie added to user ${userId}'s collection:`, searchTitle);
+    }
   } catch (userMovieError) {
     console.error("Error adding movie to user collection:", userMovieError);
-    // Don't throw here, still return the movie data
   }
 
   return {
@@ -210,6 +241,7 @@ const GetMoviesByTitleResponse = asyncHandler(
   async (req: Request, res: Response) => {
     try {
       const title = req.params.title;
+      const page = parseInt(req.query.page as string) || 1;
 
       if (!title) {
         throw new ApiError(
@@ -217,6 +249,14 @@ const GetMoviesByTitleResponse = asyncHandler(
           "Missing required parameter 'title'",
           "BAD_REQUEST"
         );
+      }
+
+      // Check if search term is too short/generic
+      if (title.trim().length < 3) {
+        return res.status(400).json({
+          success: false,
+          message: "Search term must be at least 3 characters long",
+        });
       }
 
       const apiKey = process.env.OMDB_API_KEY;
@@ -227,17 +267,43 @@ const GetMoviesByTitleResponse = asyncHandler(
 
       const url = `https://www.omdbapi.com/?s=${encodeURIComponent(
         title
-      )}&apikey=${apiKey}`;
+      )}&page=${page}&apikey=${apiKey}`;
 
       const response = await fetch(url);
-      console.log(response);
-      const data = (await response.json()) as OMDbDetailResponse;
+      const data = (await response.json()) as OMDbSearchApiResponse;
 
       if (isOMDbError(data)) {
+        // Handle specific "Too many results" error
+        if (data.Error.toLowerCase().includes("too many results")) {
+          return res.status(400).json({
+            success: false,
+            message: "Search term is too broad. Please be more specific.",
+            suggestion: "Try adding year, genre, or more specific keywords",
+          });
+        }
         throw new ApiError(404, data.Error, "NOT_FOUND");
       }
 
-      res.status(200).json({ success: true, data });
+      let search = data.Search || [];
+      const resultsPerPage = 8;
+      const startIndex = 0;
+      const endIndex = resultsPerPage;
+
+      const totalResults = parseInt(data.totalResults) || 0;
+      const totalPages = Math.ceil(totalResults / resultsPerPage);
+
+      search = search.slice(startIndex, endIndex);
+
+      const responseData = {
+        ...data,
+        Search: search,
+        totalResults: data.totalResults,
+        currentPage: page,
+        totalPages: totalPages,
+        resultsPerPage: resultsPerPage,
+      };
+
+      res.status(200).json({ success: true, data: responseData });
     } catch (error: any) {
       console.error("Error caught:", error);
 
@@ -257,6 +323,7 @@ const GetMoviesByTitleResponse = asyncHandler(
     }
   }
 );
+
 const GetMovieById = asyncHandler(async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
@@ -359,7 +426,6 @@ const GetCachedMovies = asyncHandler(async (req: Request, res: Response) => {
   try {
     //@ts-ignore
     const userId = req.user?.uid;
-
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -369,17 +435,14 @@ const GetCachedMovies = asyncHandler(async (req: Request, res: Response) => {
     }
 
     const { limit = 10, page = 0 } = req.query;
-    const offset = Number(page) * Number(limit);
 
     const snapshot = await db
       .collection("users")
       .doc(userId)
       .collection("movies")
-      .orderBy("added_at", "desc")
-      .limit(Number(limit))
-      .offset(offset)
-      .get();
 
+      .get();
+    console.log("snapshot", snapshot);
     const cachedMovies = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),

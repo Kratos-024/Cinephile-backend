@@ -3,7 +3,12 @@ import Scraper from "../data/scrape.js";
 import { ApiError } from "../utils/ApiError.utils.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { Request, Response } from "express";
-import { isOMDbError, type OMDbDetailResponse } from "./omdb.controller.js";
+import {
+  GetMovieByTitleFunction,
+  isOMDbError,
+  type OMDbDetailResponse,
+} from "./omdb.controller.js";
+import { getRecommendationsFromML } from "./user.controller.js";
 
 interface IMDBTrendingResponse {
   title: string;
@@ -259,6 +264,7 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 });
+
 const saveCommentToMovie = async (
   imdbId: string,
   commentData: {
@@ -381,11 +387,54 @@ const GetMovieReviews = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 });
+const getSimilarMovies = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { title } = req.params;
+    //@ts-ignore
 
+    const userId = req.user?.uid;
+    console.log("sdfsdhfdsjhfsd");
+    if (!title || title.trim() === "") {
+      throw new ApiError(404, "Title parameter is required", "NOT_FOUND");
+    }
+    const detailedMovies = [];
+
+    const similarMovies = await getRecommendationsFromML(title);
+    for (const movie of similarMovies) {
+      const detailMovie = await GetMovieByTitleFunction(userId, movie);
+      detailedMovies.push(detailMovie);
+    }
+    res.send({
+      success: true,
+      message: "similarMovies processed successfully",
+      similarMoviesCount: detailedMovies.length,
+      similarMovies: detailedMovies,
+    });
+  } catch (error) {
+    console.log("Error has been occured on getSimilarMovies");
+
+    if (error instanceof ApiError) {
+      res.status(error.statusCode).json({
+        success: false,
+        status: error.statusCode,
+        message: error.message,
+        type: error.type,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        status: 500,
+        message: "Failed to get movie reviews",
+        type: "INTERNAL_ERROR",
+      });
+    }
+  }
+});
 export {
   GetTrendingMovies,
   GetMovieData,
   saveCommentToMovie,
   deleteCommentFromMovie,
   GetMovieReviews,
+  getSimilarMovies,
 };

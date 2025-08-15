@@ -76,7 +76,7 @@ interface UserWatchlist {
   totalWatchlist: number;
   updatedAt: any;
 }
-const getRecommendationsFromML = async (title: string) => {
+export const getRecommendationsFromML = async (title: string) => {
   try {
     const response = await fetch("http://127.0.0.1:8080/recommend", {
       method: "POST",
@@ -121,10 +121,8 @@ const processUserPreferences = asyncHandler(
       for (const movie of allRecommendations) {
         const detailMovie = await GetMovieByTitleFunction(userId, movie);
         detailedMovies.push(detailMovie);
-        console.log("camed here1");
       }
-      // await saveRecommendationsTocollection(userId, detailedMovies);
-      console.log("camed here2");
+      console.log("sended 3user prefrences");
 
       res.send({
         success: true,
@@ -132,108 +130,13 @@ const processUserPreferences = asyncHandler(
         recommendationsCount: detailedMovies.length,
       });
     } catch (error) {
+      console.log("sended5 user prefrences", error);
+
       //@ts-ignore
       res.status(500).json({ success: true, error: error.message });
     }
   }
 );
-
-// const saveRecommendationsTocollection = async (
-//   userId: string,
-//   detailedMovies: any[]
-// ) => {
-//   try {
-//     console.log("Saving recommendations to collection...");
-
-//     if (!userId) {
-//       throw new Error("User ID is required");
-//     }
-
-//     if (!detailedMovies || detailedMovies.length === 0) {
-//       throw new Error("No recommendations to save");
-//     }
-
-//     const recommendationData = {
-//       userId,
-//       recommendations: detailedMovies,
-//       generatedAt: new Date().toISOString(),
-//       totalCount: detailedMovies.length,
-//       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-//       status: "active",
-//       metadata: {
-//         source: "ml_recommendation",
-//         version: "1.0",
-//         algorithm: "collaborative_filtering",
-//       },
-//     };
-
-//     await db
-//       .collection("user_recommendations")
-//       .doc(userId)
-//       .set(recommendationData, { merge: true });
-
-//     console.log(
-//       `Saved ${detailedMovies.length} recommendations for user: ${userId}`
-//     );
-
-//     return {
-//       success: true,
-//       message: "Recommendations saved successfully",
-//       data: {
-//         userId,
-//         totalRecommendations: detailedMovies.length,
-//         generatedAt: recommendationData.generatedAt,
-//       },
-//     };
-//   } catch (error: any) {
-//     console.error("Error saving recommendations to collection:", error);
-//     throw error;
-//   }
-// };
-
-// const getDetailedMovieData = async (movieTitles: string[]) => {
-//   const detailedMovies = [];
-
-//   for (const title of movieTitles) {
-//     try {
-//       console.log(`Getting detailed data for: ${title}`);
-
-//       const searchResponse = (await GetMovieByTitle(title, 1)) as {
-//         success: boolean;
-//         data: any;
-//         source: string;
-//         error?: string;
-//       };
-
-//       if (
-//         searchResponse &&
-//         typeof searchResponse === "object" &&
-//         "success" in searchResponse &&
-//         searchResponse.success &&
-//         searchResponse.data?.Response === "True" &&
-//         searchResponse.data?.Search?.length > 0
-//       ) {
-//         const movieSearchResult = searchResponse.data.Search[0];
-
-//         const movieDetails = {
-//           imdbID: movieSearchResult.imdbID,
-//           title: movieSearchResult.Title,
-//           poster: movieSearchResult.Poster,
-//           year: movieSearchResult.Year,
-//           type: movieSearchResult.Type,
-//           timestamp: new Date().toISOString(),
-//         };
-
-//         detailedMovies.push(movieDetails);
-//         console.log(`Got data for: ${title}`);
-//       }
-//     } catch (error) {
-//       console.error(`Error getting detailed data for ${title}:`, error);
-//     }
-//   }
-
-//   return detailedMovies;
-// };
 
 const GetUserProfile = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
@@ -1674,8 +1577,81 @@ const IsFollowing = asyncHandler(
     }
   }
 );
+const GetTop10Users = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { limit = 10 } = req.query;
+      const limitCount = Number(limit);
+
+      if (limitCount < 1 || limitCount > 50) {
+        throw new ApiError(
+          400,
+          "Limit must be between 1 and 50",
+          "BAD_REQUEST"
+        );
+      }
+
+      const usersQuery = db.collection("user_profiles").limit(limitCount);
+
+      const querySnapshot = await usersQuery.get();
+
+      if (querySnapshot.empty) {
+        console.log("sdoijfdojfoisdfiosfj");
+        return res.status(200).json({
+          success: true,
+          message: "No users found",
+          data: {
+            users: [],
+            totalUsers: 0,
+          },
+        });
+      }
+
+      const users = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          uid: doc.id,
+          displayName: data.displayName || "Unknown User",
+          photoURL: data.photoURL || "",
+          email: data.email || "",
+          bio: data.bio || "",
+          followersCount: data.followersCount || 0,
+          followingCount: data.followingCount || 0,
+          createdAt: data.createdAt || null,
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Newest users retrieved successfully",
+        data: {
+          users,
+          totalUsers: users.length,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error getting newest users:", error);
+      if (error instanceof ApiError) {
+        res.status(error.statusCode).json({
+          success: false,
+          status: error.statusCode,
+          message: error.message,
+          type: error.type,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          status: 500,
+          message: "Something went wrong while retrieving users",
+          type: "INTERNAL_ERROR",
+        });
+      }
+    }
+  }
+);
 
 export {
+  GetTop10Users,
   IsFollowing,
   getUserInfo,
   LikeMovie,
