@@ -179,6 +179,47 @@ const storeMovieDataInFirebase = async (
     throw new ApiError(500, "Failed to store movie data in Firebase");
   }
 };
+const isVideoSourceExpired = (videoSources: any[]): boolean => {
+  if (!videoSources || videoSources.length === 0) return true;
+
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  for (const source of videoSources) {
+    if (source.src) {
+      const expiresMatch = source.src.match(/Expires=(\d+)/);
+      if (expiresMatch) {
+        const expirationTime = parseInt(expiresMatch[1]);
+        if (expirationTime <= currentTime + 3600) {
+          console.log(`Video source expired: ${source.src}`);
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+};
+const updateVideoSources = async (imdbId: string, movieData: any) => {
+  const scraper = new Scraper();
+  try {
+    const imdbUrl = `https://www.imdb.com/title/${imdbId}/`;
+    await scraper.start(imdbUrl);
+
+    const newVideoSources = await scraper.scrapeVideoSources();
+
+    movieData.videoSources = newVideoSources;
+    movieData.videoSourcesUpdatedAt = new Date().toISOString();
+
+    await storeMovieDataInFirebase(imdbId, movieData);
+
+    return newVideoSources;
+  } catch (error) {
+    console.error(`❌ Failed to update video sources for ${imdbId}:`, error);
+    return movieData.videoSources;
+  } finally {
+    await scraper.close();
+  }
+};
 
 const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
   try {
@@ -193,25 +234,40 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
       const movieData = movieDoc.data();
       console.log(`📋 Retrieved movie data for ${imdbIdParam} from Firebase`);
 
+      const videoSources = movieData?.data?.videoSources;
+
+      if (videoSources && isVideoSourceExpired(videoSources)) {
+        console.log(`🔄 Video sources expired for ${imdbIdParam}, updating...`);
+
+        const updatedVideoSources = await updateVideoSources(
+          imdbIdParam,
+          movieData.data
+        );
+        movieData.data.videoSources = updatedVideoSources;
+      }
+
       return res.status(200).json({
         success: true,
         imdb_id: imdbIdParam,
         data: movieData?.data,
-        source: "firebase",
+        source:
+          videoSources && isVideoSourceExpired(videoSources)
+            ? "firebase_updated"
+            : "firebase",
       });
     }
 
-    console.log(`Scraping movie data for ${imdbIdParam} from IMDb...`);
     const apiKey = process.env.OMDB_API_KEY;
-
     const url = `https://www.omdbapi.com/?i=${imdbIdParam}&apikey=${apiKey}`;
 
     const movieData = await fetchMovieFromIMDb(imdbIdParam);
     const response = await fetch(url);
     const data = (await response.json()) as OMDbDetailResponse;
+
     if (isOMDbError(data)) {
       throw new ApiError(404, data.Error, "NOT_FOUND");
     }
+
     const omdbRating = data.Ratings;
     const storyLine = data.Plot;
     const genre = data.Genre;
@@ -239,7 +295,7 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
     movieData.Rated = Rated;
 
     await storeMovieDataInFirebase(imdbIdParam, movieData);
-    console.log("movieData", movieData);
+
     res.status(200).json({
       success: true,
       imdb_id: imdbIdParam,
@@ -247,7 +303,7 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
       source: "scraper",
     });
   } catch (error: any) {
-    console.error(` Error getting movie data for :`, error);
+    console.error(`Error getting movie data for:`, error);
 
     if (error instanceof ApiError) {
       res.status(error.statusCode).json({

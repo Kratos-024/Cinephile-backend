@@ -33,7 +33,6 @@ userRouter.route("/preferences").get(GetUserPreference);
 userRouter.route("/preferences").put(UpdateUserPreference);
 userRouter.route("/preferences/:userId").get(GetUserPreference);
 userRouter.route("/reviews").post(SaveUserReview);
-// userRouter.route("/reviews").get(GetUserReviews);
 userRouter.route("/reviews/:userId").get(GetUserReviews);
 userRouter.route("/reviews/:imdbId").delete(DeleteUserReview);
 userRouter.route("/follow").post(FollowUser);
@@ -49,7 +48,7 @@ userRouter.route("/LikeMovie").post(LikeMovie);
 userRouter.route("/UnlikeMovie").post(UnlikeMovie);
 userRouter.route("/AddToWatchlist").post(AddToWatchlist);
 userRouter.route("/RemoveFromWatchlist").post(RemoveFromWatchlist);
-userRouter.route("/GetUserWatchlist").get(GetUserWatchlist);
+userRouter.get("/GetUserWatchlist/:userId", authenticateUser, GetUserWatchlist);
 userRouter.route("/isfollowing/:targetUserId").get(IsFollowing);
 
 userRouter.route("/getUserInfo").post(getUserInfo);

@@ -1155,7 +1155,7 @@ const RemoveFromWatchlist = asyncHandler(
 const GetUserWatchlist = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.uid || req.params.userId;
+      const userId = req.params.userId || req.user?.uid; // Fixed this line
       const { limit = 10, offset = 0 } = req.query;
 
       if (!userId) {
@@ -1166,6 +1166,7 @@ const GetUserWatchlist = asyncHandler(
         );
       }
 
+      // Rest of your code remains the same...
       const doc = await db.collection("user_watchlist").doc(userId).get();
 
       if (!doc.exists) {
@@ -1188,13 +1189,7 @@ const GetUserWatchlist = asyncHandler(
       const startIndex = Number(offset);
       const endIndex = startIndex + Number(limit);
       const paginatedWatchlist = allWatchlist.slice(startIndex, endIndex);
-      console.log({
-        userId,
-        watchlistMovies: paginatedWatchlist,
-        totalWatchlist: allWatchlist.length,
-        currentPage: Math.floor(Number(offset) / Number(limit)) + 1,
-        totalPages: Math.ceil(allWatchlist.length / Number(limit)),
-      });
+
       res.status(200).json({
         success: true,
         message: "Watchlist retrieved successfully",
