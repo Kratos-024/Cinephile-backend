@@ -29,6 +29,6 @@ RUN npm install
 COPY . .
 
 # Puppeteer will use system Chromium
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 CMD ["npm", "start"]
