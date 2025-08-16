@@ -17,5 +17,6 @@ app.use(express.static("public"));
 app.use("/api/v1/omdb/", omdbRouter);
 app.use("/api/v1/tmdb/", tmdbRouter);
 app.use("/api/v1/user/", userRouter);
+app.use("/api/v1/corn/", userRouter);
 
 export default app;
