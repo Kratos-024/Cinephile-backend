@@ -1,29 +1,38 @@
-import chromium from "chrome-aws-lambda";
 import puppeteer from "puppeteer-core";
-import type { Browser, Page } from "puppeteer-core";
+import chromium from "chrome-aws-lambda";
 
 export default class Scraper {
-  private browser: Browser | null = null;
-  private page: Page | null = null;
+  private browser: puppeteer.Browser | null = null;
+  private page: puppeteer.Page | null = null;
 
   async start(link: string) {
+    const isProduction = process.env.NODE_ENV === "production";
+
+    const executablePath = isProduction
+      ? await chromium.executablePath
+      : (await import("puppeteer")).executablePath();
+
     this.browser = await puppeteer.launch({
-      args: chromium.args,
+      args: isProduction ? chromium.args : [],
       defaultViewport: chromium.defaultViewport,
-      executablePath:
-        (await chromium.executablePath) || "/usr/bin/chromium-browser", // fallback for Docker/Render
-      headless: chromium.headless,
+      executablePath,
+      headless: isProduction ? chromium.headless : true,
     });
 
     this.page = await this.browser.newPage();
 
-    // Prevent IMDb bot-block
+    // Avoid IMDb bot detection
     await this.page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
     );
 
     await this.page.goto(link, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+
+  async scrapeText(selector: string): Promise<string | null> {
+    if (!this.page) throw new Error("Scraper not started");
+    return this.page.$eval(selector, (el) => el.textContent?.trim() || null);
   }
 
   async scrapeCompleteMovieData(link: string) {
