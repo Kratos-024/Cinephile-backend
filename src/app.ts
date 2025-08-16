@@ -3,6 +3,7 @@ import cors from "cors";
 import omdbRouter from "./routes/omdb.routes.js";
 import tmdbRouter from "./routes/tmdb.routes.js";
 import userRouter from "./routes/user.routes.js";
+import cornRouter from "./routes/cornjob.route.js";
 
 const app = express();
 app.use(
@@ -17,6 +18,6 @@ app.use(express.static("public"));
 app.use("/api/v1/omdb/", omdbRouter);
 app.use("/api/v1/tmdb/", tmdbRouter);
 app.use("/api/v1/user/", userRouter);
-app.use("/api/v1/corn/", userRouter);
+app.use("/api/v1/corn/", cornRouter);
 
 export default app;
