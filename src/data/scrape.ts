@@ -21,7 +21,7 @@ export default class Scraper {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
     );
 
-    await this.page.goto(link, { waitUntisl: "networkidle2" });
+    await this.page.goto(link, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
