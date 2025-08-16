@@ -4,7 +4,7 @@ export default class Scraper {
   browser: Browser | null = null;
   page: Page | null = null;
 
-  browserOptions = { headless: false };
+  browserOptions = { headless: true };
 
   async start(link: string) {
     this.browser = await puppeteer.launch(this.browserOptions);

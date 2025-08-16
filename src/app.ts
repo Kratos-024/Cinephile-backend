@@ -8,7 +8,11 @@ import cornRouter from "./routes/cornjob.route.js";
 const app = express();
 app.use(
   cors({
-    origin: ["https://cinephile-frontend.vercel.app", "http://localhost:5173"],
+    origin: [
+      "https://cinephile-frontend.vercel.app",
+      "https://cinephile-frontend-hk41kv2lb-klatosthgos-024s-projects.vercel.app/",
+      "http://localhost:5173",
+    ],
     credentials: true,
   })
 );
