@@ -1,16 +1,17 @@
 import chromium from "chrome-aws-lambda";
-import puppeteer, { Browser, Page } from "puppeteer-core";
+import puppeteer from "puppeteer-core";
+import type { Browser, Page } from "puppeteer-core";
+
 export default class Scraper {
   private browser: Browser | null = null;
   private page: Page | null = null;
 
-  // Start the scraper with a given IMDb link
   async start(link: string) {
     this.browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath:
-        (await chromium.executablePath) || "/usr/bin/chromium-browser", // fallback for Docker
+        (await chromium.executablePath) || "/usr/bin/chromium-browser", // fallback for Docker/Render
       headless: chromium.headless,
     });
 
@@ -24,6 +25,7 @@ export default class Scraper {
     await this.page.goto(link, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
+
   async scrapeCompleteMovieData(link: string) {
     await this.start(link);
     if (!this.page) throw new Error("Page not initialized");
