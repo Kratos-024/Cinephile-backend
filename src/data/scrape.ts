@@ -1,26 +1,18 @@
-import puppeteer from "puppeteer-core";
-import chromium from "chrome-aws-lambda";
+import puppeteer from "puppeteer";
 
 export default class Scraper {
   private browser: puppeteer.Browser | null = null;
   private page: puppeteer.Page | null = null;
 
   async start(link: string) {
-    const executablePath = await chromium.executablePath;
-
     this.browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: executablePath || "/usr/bin/chromium-browser", // fallback
-      headless: chromium.headless,
+      headless: true,
+      executablePath:
+        process.env.PUPPETEER_EXECUTABLE_PATH ?? "/usr/bin/chromium",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     this.page = await this.browser.newPage();
-
-    await this.page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
-    );
-
     await this.page.goto(link, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
