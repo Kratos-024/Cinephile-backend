@@ -6,27 +6,22 @@ export default class Scraper {
   private page: puppeteer.Page | null = null;
 
   async start(link: string) {
-    const isProduction = process.env.NODE_ENV === "production";
-
-    const executablePath = isProduction
-      ? await chromium.executablePath
-      : (await import("puppeteer")).executablePath();
+    const executablePath = await chromium.executablePath;
 
     this.browser = await puppeteer.launch({
-      args: isProduction ? chromium.args : [],
+      args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: isProduction ? chromium.headless : true,
+      executablePath: executablePath || "/usr/bin/chromium-browser", // fallback
+      headless: chromium.headless,
     });
 
     this.page = await this.browser.newPage();
 
-    // Avoid IMDb bot detection
     await this.page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
     );
 
-    await this.page.goto(link, { waitUntil: "networkidle2" });
+    await this.page.goto(link, { waitUntisl: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
