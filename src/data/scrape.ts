@@ -1,19 +1,29 @@
-import puppeteer, { Browser, Page } from "puppeteer";
-
+import chromium from "chrome-aws-lambda";
+import puppeteer, { Browser, Page } from "puppeteer-core";
 export default class Scraper {
-  browser: Browser | null = null;
-  page: Page | null = null;
+  private browser: Browser | null = null;
+  private page: Page | null = null;
 
-  browserOptions = { headless: true };
-
+  // Start the scraper with a given IMDb link
   async start(link: string) {
-    this.browser = await puppeteer.launch(this.browserOptions);
-    this.page = await this.browser.newPage();
-    await this.page.goto(link, { waitUntil: "networkidle2" });
+    this.browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath:
+        (await chromium.executablePath) || "/usr/bin/chromium-browser", // fallback for Docker
+      headless: chromium.headless,
+    });
 
+    this.page = await this.browser.newPage();
+
+    // Prevent IMDb bot-block
+    await this.page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
+    );
+
+    await this.page.goto(link, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
-
   async scrapeCompleteMovieData(link: string) {
     await this.start(link);
     if (!this.page) throw new Error("Page not initialized");
