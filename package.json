@@ -1,7 +1,7 @@
 {
   "name": "cinephile-backend",
   "version": "1.0.0",
-  "description": "Cinephile backend API with Puppeteer scraping capabilities for movie data",
+  "description": "Cinephile backend API with Puppeteer scraping capabilities",
   "main": "index.js",
   "engines": {
     "node": ">=18.0.0",
@@ -18,11 +18,8 @@
     "docker:build": "docker build -t cinephile-backend .",
     "docker:run": "docker run -p 8000:8000 cinephile-backend",
     "docker:compose": "docker-compose up --build",
-    "docker:compose:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f",
     "heroku-postbuild": "npm run build",
-    "postinstall": "npm run build",
-    "health:check": "node healthcheck.js"
+    "postinstall": "npm run build"
   },
   "keywords": [
     "nodejs",
@@ -31,16 +28,15 @@
     "scraping",
     "api",
     "docker",
-    "typescript",
-    "movie",
-    "imdb",
-    "cinema"
+    "typescript"
   ],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
     "@types/express": "^5.0.3",
+    "@types/cors": "^2.8.19",
+    "@types/node": "^20.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -52,8 +48,6 @@
     "typescript": "^5.9.2"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/node": "^20.0.0",
     "nodemon": "^3.1.10",
     "tsc-node": "^0.0.3"
   },
