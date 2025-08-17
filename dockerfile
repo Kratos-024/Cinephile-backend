@@ -1,34 +1,47 @@
-FROM node:18-slim
+# Use Node.js 18 with Alpine for smaller image size
+FROM node:18-alpine
 
-# Install Chromium dependencies
-RUN apt-get update && apt-get install -y \
+# Install Chromium and required dependencies for Alpine
+RUN apk add --no-cache \
     chromium \
-    chromium-driver \
-    fonts-liberation \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libx11-xcb1 \
-    libnss3 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxi6 \
-    libxtst6 \
-    libappindicator3-1 \
-    libxrandr2 \
-    xdg-utils \
-    libasound2 \
-    libgbm-dev \
-    && rm -rf /var/lib/apt/lists/*
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
 
+# Create a non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Set working directory
 WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
-RUN npm install
 
-COPY . .
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
 
-# Puppeteer will use system Chromium
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Copy source code
+COPY --chown=nodejs:nodejs . .
 
+# Set environment variables for Puppeteer
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node healthcheck.js || exit 1
+
+# Start the application
 CMD ["npm", "start"]

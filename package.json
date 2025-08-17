@@ -1,36 +1,63 @@
 {
   "name": "cinephile-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Cinephile backend API with Puppeteer scraping capabilities for movie data",
   "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node --loader ts-node/esm -r dotenv/config src/index.ts",
+    "start:prod": "node -r dotenv/config dist/index.js",
     "build": "tsc",
     "run": "node -r dotenv/config dist/index.js",
     "dev": "npm run build && npm run run",
-    "dev:watch": "nodemon -r dotenv/config dist/index.js"
+    "dev:watch": "nodemon -r dotenv/config dist/index.js",
+    "docker:build": "docker build -t cinephile-backend .",
+    "docker:run": "docker run -p 8000:8000 cinephile-backend",
+    "docker:compose": "docker-compose up --build",
+    "docker:compose:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "heroku-postbuild": "npm run build",
+    "postinstall": "npm run build",
+    "health:check": "node healthcheck.js"
   },
-  "keywords": [],
+  "keywords": [
+    "nodejs",
+    "express",
+    "puppeteer",
+    "scraping",
+    "api",
+    "docker",
+    "typescript",
+    "movie",
+    "imdb",
+    "cinema"
+  ],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
     "@types/express": "^5.0.3",
-    "chrome-aws-lambda": "^10.1.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "firebase": "^12.0.0",
     "firebase-admin": "^13.4.0",
     "node-cron": "^4.2.1",
-    "nodemon": "^3.1.10",
     "puppeteer": "^22.15.0",
     "ts-node": "^10.9.2",
-    "tsc-node": "^0.0.3",
     "typescript": "^5.9.2"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19"
+    "@types/cors": "^2.8.19",
+    "@types/node": "^20.0.0",
+    "nodemon": "^3.1.10",
+    "tsc-node": "^0.0.3"
+  },
+  "optionalDependencies": {
+    "chrome-aws-lambda": "^10.1.0"
   }
 }

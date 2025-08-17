@@ -1,9 +1,26 @@
+# render.yaml
 services:
   - type: web
-    name: my-scraper
+    name: cinephile-backend
     env: docker
-    plan: free
+    plan: starter
+    region: oregon
     dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 8000
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: true
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/chromium-browser
+    healthCheckPath: /health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - src/**
+        - package.json
+        - Dockerfile
+      ignoredPaths:
+        - "*.md"
