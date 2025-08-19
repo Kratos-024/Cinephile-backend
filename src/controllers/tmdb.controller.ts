@@ -285,9 +285,34 @@ const storeMovieDataInFirebase = async (
   movieData: any
 ): Promise<void> => {
   try {
+    // Recursively remove undefined values from the entire movieData object
+    const sanitizeObject = (obj: any): any => {
+      if (obj === null || obj === undefined) {
+        return null;
+      }
+
+      if (Array.isArray(obj)) {
+        return obj.map(sanitizeObject);
+      }
+
+      if (typeof obj === "object") {
+        const sanitized: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+          if (value !== undefined) {
+            sanitized[key] = sanitizeObject(value);
+          }
+        }
+        return sanitized;
+      }
+
+      return obj;
+    };
+
+    const sanitizedMovieData = sanitizeObject(movieData);
+
     const movieDoc = {
       imdb_id: imdbId,
-      data: movieData,
+      data: sanitizedMovieData,
       created_at: admin.firestore.Timestamp.now(),
       updated_at: admin.firestore.Timestamp.now(),
     };
@@ -397,19 +422,20 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
       throw new ApiError(404, data.Error, "NOT_FOUND");
     }
 
-    // Merge OMDb data with scraped data
-    const omdbRating = data.Ratings;
-    const storyLine = data.Plot;
-    const genre = data.Genre;
-    const BoxOffice = data.BoxOffice;
-    const Language = data.Language;
-    const title = data.Title;
-    const Released = data.Released;
-    const Runtime = data.Runtime;
-    const Awards = data.Awards;
-    const Director = data.Director;
-    const Rated = data.Rated;
-    const Country = data.Country;
+    const sanitizeValue = (value: any) => (value === undefined ? null : value);
+
+    const omdbRating = sanitizeValue(data.Ratings);
+    const storyLine = sanitizeValue(data.Plot);
+    const genre = sanitizeValue(data.Genre);
+    const BoxOffice = sanitizeValue(data.BoxOffice);
+    const Language = sanitizeValue(data.Language);
+    const title = sanitizeValue(data.Title);
+    const Released = sanitizeValue(data.Released);
+    const Runtime = sanitizeValue(data.Runtime);
+    const Awards = sanitizeValue(data.Awards);
+    const Director = sanitizeValue(data.Director);
+    const Rated = sanitizeValue(data.Rated);
+    const Country = sanitizeValue(data.Country);
 
     movieData.Country = Country;
     movieData.Director = Director;
