@@ -1608,7 +1608,6 @@ const GetTop10Users = asyncHandler(
       const querySnapshot = await usersQuery.get();
 
       if (querySnapshot.empty) {
-        console.log("sdoijfdojfoisdfiosfj");
         return res.status(200).json({
           success: true,
           message: "No users found",

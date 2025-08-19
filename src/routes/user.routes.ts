@@ -24,9 +24,9 @@ import {
 import { authenticateUser } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
+userRouter.route("/GetTop10Users").get(GetTop10Users);
 
 userRouter.use(authenticateUser);
-userRouter.route("/GetTop10Users").get(GetTop10Users);
 
 userRouter.route("/preferences").post(processUserPreferences);
 userRouter.route("/preferences").get(GetUserPreference);
