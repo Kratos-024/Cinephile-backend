@@ -1,47 +1,31 @@
-# Use Node.js 18 with Alpine for smaller image size
-FROM node:18-alpine
-
-# Install Chromium and required dependencies for Alpine
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    && rm -rf /var/cache/apk/*
-
-# Create a non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
-
-# Set working directory
+# ---------- Build Stage ----------
+FROM node:20-slim AS builder
 WORKDIR /app
 
-# Copy package files
+# Copy only package files first (better caching)
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install deps (no scripts yet)
+RUN npm ci --ignore-scripts
 
-# Copy source code
-COPY --chown=nodejs:nodejs . .
+# Copy rest of the code
+COPY . .
 
-# Set environment variables for Puppeteer
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-    NODE_ENV=production
+# Build TypeScript -> dist/
+RUN npm run build
 
-# Switch to non-root user
-USER nodejs
+# ---------- Runtime Stage ----------
+FROM ghcr.io/puppeteer/puppeteer:23.0.0
+WORKDIR /app
 
-# Expose port
+# Copy only what's needed for runtime
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/dist ./dist
+
+# Install production deps only
+RUN npm ci --omit=dev --ignore-scripts
+
+# Expose backend port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node healthcheck.js || exit 1
-
-# Start the application
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

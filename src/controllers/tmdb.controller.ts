@@ -253,8 +253,6 @@ const fetchMovieFromIMDb = async (imdbId: string): Promise<any> => {
   const scraper = new Scraper();
 
   try {
-    console.log(`🎬 Scraping movie data for IMDb ID: ${imdbId}`);
-
     const movieData = await scraper.scrapeCompleteMovieData(
       `https://www.imdb.com/title/${imdbId}`
     );
@@ -388,7 +386,6 @@ const GetMovieData = asyncHandler(async (req: Request, res: Response) => {
       });
     }
 
-    // If not in cache, scrape from IMDb and get additional data from OMDb
     const apiKey = process.env.OMDB_API_KEY;
     const url = `https://www.omdbapi.com/?i=${imdbIdParam}&apikey=${apiKey}`;
 
@@ -602,6 +599,7 @@ const getSimilarMovies = asyncHandler(async (req: Request, res: Response) => {
     for (const movie of similarMovies) {
       try {
         const detailMovie = await GetMovieByTitleFunction(userId, movie);
+        //@ts-ignore
         detailedMovies.push(detailMovie);
       } catch (error) {
         console.warn(

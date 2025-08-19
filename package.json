@@ -34,8 +34,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@types/express": "^5.0.3",
     "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
     "@types/node": "^20.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
@@ -43,15 +43,12 @@
     "firebase": "^12.0.0",
     "firebase-admin": "^13.4.0",
     "node-cron": "^4.2.1",
-    "puppeteer": "^22.15.0",
+    "puppeteer": "^24.16.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
     "tsc-node": "^0.0.3"
-  },
-  "optionalDependencies": {
-    "chrome-aws-lambda": "^10.1.0"
   }
 }

@@ -78,7 +78,7 @@ interface OMDbErrorResponse {
   Error: string;
 }
 
-type OMDbResponse = OMDbSearchResponse | OMDbErrorResponse;
+export type OMDbResponse = OMDbSearchResponse | OMDbErrorResponse;
 export type OMDbDetailResponse = OMDbMovieDetailResponse | OMDbErrorResponse;
 
 export const isOMDbError = (

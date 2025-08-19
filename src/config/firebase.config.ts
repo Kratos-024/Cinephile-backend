@@ -1,21 +1,16 @@
+// Fixed Firebase initialization with proper JSON import
 import admin from "firebase-admin";
-const projectId = process.env.FIREBASE_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+import { readFileSync } from "fs";
+
+// Read the JSON file properly
+const serviceAccount = JSON.parse(
+  readFileSync("./firebase-service-account.json", "utf8")
+);
 
 if (!admin.apps.length) {
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      "Missing required Firebase environment variables: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, or FIREBASE_PRIVATE_KEY"
-    );
-  }
-
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: process.env.FIREBASE_DATABASE_URL, // Keep this from your .env file if you have it
   });
 }
 

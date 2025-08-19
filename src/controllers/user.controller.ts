@@ -7,7 +7,7 @@ import {
   deleteCommentFromMovie,
   saveCommentToMovie,
 } from "./tmdb.controller.js";
-import { GetMovieByTitleFunction } from "./omdb.controller.js";
+import { GetMovieByTitleFunction, OMDbResponse } from "./omdb.controller.js";
 
 interface SelectedMovie {
   imdbID: string;
@@ -93,8 +93,9 @@ export const getRecommendationsFromML = async (title: string) => {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
-    if (data.recommendations && data.recommendations.recommended) {
-      return data.recommendations.recommended;
+
+    if (data.recommended && data.recommended.length > 0) {
+      return data.recommended;
     } else {
       console.warn(`No recommendations found for: ${title}`);
       return [];
@@ -113,14 +114,23 @@ const processUserPreferences = asyncHandler(
       const userId = req.user?.uid;
 
       await SaveUserPreference(userId, preferences);
-      const allRecommendations = [];
+      const allRecommendations: string[] = [];
       for (const movie of preferences) {
         const recommendations = await getRecommendationsFromML(movie.title);
         allRecommendations.push(...recommendations);
       }
-      const detailedMovies = [];
+      type MovieResult = {
+        success: boolean;
+        message?: string;
+        source: string;
+        added_to_user: string;
+        data: OMDbResponse | null;
+      };
+
+      const detailedMovies: MovieResult[] = [];
       for (const movie of allRecommendations) {
         const detailMovie = await GetMovieByTitleFunction(userId, movie);
+        //@ts-ignore
         detailedMovies.push(detailMovie);
       }
       console.log("sended 3user prefrences");
@@ -1361,6 +1371,15 @@ const GetUserFollowers = asyncHandler(
           )
         );
 
+        type FollowerProfile = {
+          uid: string;
+          displayName: string;
+          photoURL: string;
+          email: string;
+          bio: string | undefined;
+        };
+
+        const followerProfiles: FollowerProfile[] = [];
         for (const followerDoc of followerDocs) {
           if (followerDoc.exists) {
             const data = followerDoc.data();
@@ -1444,18 +1463,15 @@ const GetUserFollowing = asyncHandler(
           )
         );
 
-        for (const followingDoc of followingDocs) {
-          if (followingDoc.exists) {
-            const data = followingDoc.data();
-            followingProfiles.push({
-              uid: followingDoc.id,
-              displayName: data?.displayName || "Unknown User",
-              photoURL: data?.photoURL || "",
-              email: data?.email || "",
-              bio: data?.bio || undefined,
-            });
-          }
+        interface UserProfile {
+          uid: string;
+          displayName: string;
+          photoURL: string;
+          email: string;
+          bio?: string;
         }
+
+        const followingProfiles: UserProfile[] = [];
       }
 
       res.status(200).json({
